@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["localhost:3000", "*.vercel.app"]
+    }
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -7,11 +12,17 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    domains: ['localhost'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
+      },
+    ],
     unoptimized: true,
   },
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/ssr']
-  }
 }
 
 export default nextConfig

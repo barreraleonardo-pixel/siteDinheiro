@@ -1,59 +1,83 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useUser } from "@/lib/contexts/UserContext"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
-import LoginForm from "@/components/LoginForm"
-import Header from "@/components/Header"
-import FinancialControl from "@/financial-control"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Loader2 } from "lucide-react"
+import FinancialDashboard from "@/components/financial-dashboard"
 
 export default function HomePage() {
   const { user, loading } = useUser()
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      router.push("/setup")
-    }
-  }, [router])
+    setMounted(true)
+  }, [])
 
-  if (!isSupabaseConfigured()) {
+  useEffect(() => {
+    if (mounted && !loading) {
+      if (!isSupabaseConfigured()) {
+        router.push("/setup")
+        return
+      }
+
+      if (!user) {
+        router.push("/login")
+        return
+      }
+    }
+  }, [mounted, loading, user, router])
+
+  if (!mounted || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Sistema não configurado</h1>
-          <p className="text-gray-600">Redirecionando para configuração...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+              <p>Carregando...</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  if (loading) {
+  if (!isSupabaseConfigured()) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold mb-4">Configuração Necessária</h2>
+              <p className="text-gray-600 mb-4">Configure o Supabase para usar o sistema</p>
+              <Button onClick={() => router.push("/setup")}>Ir para Configuração</Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <LoginForm />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold mb-4">Acesso Necessário</h2>
+              <p className="text-gray-600 mb-4">Faça login para acessar o sistema</p>
+              <Button onClick={() => router.push("/login")}>Fazer Login</Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <main className="container mx-auto px-4 py-8">
-        <FinancialControl />
-      </main>
-    </div>
-  )
+  return <FinancialDashboard />
 }

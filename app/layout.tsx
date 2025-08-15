@@ -8,8 +8,8 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Financeiro Pessoal",
-  description: "Sistema de controle financeiro pessoal",
+  title: "Sistema Financeiro Pessoal",
+  description: "Controle suas finanças pessoais de forma simples e eficiente",
     generator: 'v0.app'
 }
 

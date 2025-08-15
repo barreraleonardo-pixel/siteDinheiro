@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -11,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function LoginForm() {
   const [email, setEmail] = useState("")
@@ -19,6 +19,7 @@ export default function LoginForm() {
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const supabase = createClient()
+  const router = useRouter()
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,6 +34,9 @@ export default function LoginForm() {
 
     if (error) {
       setError(error.message)
+    } else {
+      router.push("/")
+      router.refresh()
     }
 
     setLoading(false)

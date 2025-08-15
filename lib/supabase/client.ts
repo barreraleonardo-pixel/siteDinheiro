@@ -1,9 +1,31 @@
 import { createBrowserClient } from "@supabase/ssr"
 
 export function createClient() {
-  return createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  // Check if environment variables are available
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // If not configured, return a mock client to prevent errors
+  if (
+    !supabaseUrl ||
+    !supabaseAnonKey ||
+    supabaseUrl === "your-supabase-url" ||
+    supabaseAnonKey === "your-supabase-anon-key"
+  ) {
+    return null
+  }
+
+  return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }
 
 export function isSupabaseConfigured() {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  return !!(
+    supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseUrl !== "your-supabase-url" &&
+    supabaseAnonKey !== "your-supabase-anon-key"
+  )
 }

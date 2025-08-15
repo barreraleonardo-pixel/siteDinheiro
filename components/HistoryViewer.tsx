@@ -4,116 +4,122 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Calendar, TrendingUp, TrendingDown, Filter, Download } from "lucide-react"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/contexts/UserContext"
-import { historicoService } from "@/lib/services/historico"
-import type { Transaction, UserStats } from "@/lib/types"
 import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
+import { CalendarIcon, Download, Search, Filter } from "lucide-react"
+import type { Transaction } from "@/lib/types"
 
 export default function HistoryViewer() {
   const { user } = useUser()
+  const supabase = createClient()
+
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [stats, setStats] = useState<UserStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [filterType, setFilterType] = useState<"all" | "receita" | "despesa">("all")
-  const [filterCategory, setFilterCategory] = useState("")
-  const [startDate, setStartDate] = useState("")
-  const [endDate, setEndDate] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all")
+  const [filterCategory, setFilterCategory] = useState<string>("all")
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined
+    to: Date | undefined
+  }>({
+    from: undefined,
+    to: undefined,
+  })
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
+
+  const categories = [
+    "Salário",
+    "Freelance",
+    "Investimentos",
+    "Vendas",
+    "Alimentação",
+    "Transporte",
+    "Moradia",
+    "Saúde",
+    "Educação",
+    "Lazer",
+    "Compras",
+    "Contas",
+    "Outros",
+  ]
 
   useEffect(() => {
     if (user) {
-      fetchData()
+      loadTransactions()
     }
   }, [user])
 
-  const fetchData = async () => {
-    if (!user) return
-
+  const loadTransactions = async () => {
     try {
-      setLoading(true)
-      const [transactionsData, statsData] = await Promise.all([
-        historicoService.getTransactions(user.id),
-        historicoService.getUserStats(user.id),
-      ])
+      const query = supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", user?.id)
+        .order("date", { ascending: false })
 
-      setTransactions(transactionsData)
-      setStats(statsData)
-    } catch (err: any) {
-      setError(err.message)
+      const { data, error } = await query
+
+      if (error) throw error
+
+      setTransactions(data || [])
+    } catch (error) {
+      console.error("Error loading transactions:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const applyFilters = async () => {
-    if (!user) return
+  const filteredTransactions = transactions.filter((t) => {
+    const matchesSearch =
+      t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesType = filterType === "all" || t.type === filterType
+    const matchesCategory = filterCategory === "all" || t.category === filterCategory
 
-    try {
-      setLoading(true)
-      let filteredTransactions: Transaction[]
-
-      if (startDate && endDate) {
-        filteredTransactions = await historicoService.getTransactionsByPeriod(user.id, startDate, endDate)
-      } else if (filterCategory) {
-        filteredTransactions = await historicoService.getTransactionsByCategory(user.id, filterCategory)
-      } else {
-        filteredTransactions = await historicoService.getTransactions(user.id)
-      }
-
-      if (filterType !== "all") {
-        filteredTransactions = filteredTransactions.filter((t) => t.type === filterType)
-      }
-
-      setTransactions(filteredTransactions)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
+    let matchesDate = true
+    if (dateRange.from && dateRange.to) {
+      const transactionDate = new Date(t.date)
+      matchesDate = transactionDate >= dateRange.from && transactionDate <= dateRange.to
     }
-  }
 
-  const clearFilters = () => {
-    setFilterType("all")
-    setFilterCategory("")
-    setStartDate("")
-    setEndDate("")
-    fetchData()
-  }
+    return matchesSearch && matchesType && matchesCategory && matchesDate
+  })
 
-  const exportData = () => {
+  const exportToCSV = () => {
+    const headers = ["Data", "Descrição", "Categoria", "Tipo", "Valor"]
     const csvContent = [
-      ["Data", "Tipo", "Categoria", "Descrição", "Valor"].join(","),
-      ...transactions.map((t) =>
-        [format(new Date(t.date), "dd/MM/yyyy"), t.type, t.category, t.description, t.amount.toString()].join(","),
+      headers.join(","),
+      ...filteredTransactions.map((t) =>
+        [
+          format(new Date(t.date), "dd/MM/yyyy"),
+          `"${t.description}"`,
+          `"${t.category}"`,
+          t.type === "income" ? "Receita" : "Despesa",
+          t.amount.toFixed(2).replace(".", ","),
+        ].join(","),
       ),
     ].join("\n")
 
-    const blob = new Blob([csvContent], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `transacoes-${format(new Date(), "yyyy-MM-dd")}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", `historico_transacoes_${format(new Date(), "yyyy-MM-dd")}.csv`)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value)
-  }
-
-  const categories = Array.from(new Set(transactions.map((t) => t.category)))
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
+      <div className="flex items-center justify-center py-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     )
@@ -121,60 +127,16 @@ export default function HistoryViewer() {
 
   return (
     <div className="space-y-6">
-      {/* Statistics Cards */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Receitas Totais</p>
-                  <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.total_income)}</p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Despesas Totais</p>
-                  <p className="text-2xl font-bold text-red-600">{formatCurrency(stats.total_expenses)}</p>
-                </div>
-                <TrendingDown className="h-8 w-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Saldo Total</p>
-                  <p className={`text-2xl font-bold ${stats.balance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {formatCurrency(stats.balance)}
-                  </p>
-                </div>
-                <Calendar className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Transações</p>
-                  <p className="text-2xl font-bold text-blue-600">{stats.transaction_count}</p>
-                </div>
-                <Filter className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold">Histórico de Transações</h2>
+          <p className="text-gray-600">Visualize e exporte seu histórico completo</p>
         </div>
-      )}
+        <Button onClick={exportToCSV} disabled={filteredTransactions.length === 0}>
+          <Download className="h-4 w-4 mr-2" />
+          Exportar CSV
+        </Button>
+      </div>
 
       {/* Filters */}
       <Card>
@@ -183,35 +145,47 @@ export default function HistoryViewer() {
             <Filter className="h-5 w-5" />
             Filtros
           </CardTitle>
-          <CardDescription>Filtre suas transações por tipo, categoria ou período</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <Label>Tipo</Label>
-              <Select value={filterType} onValueChange={(value: any) => setFilterType(value)}>
+              <label className="text-sm font-medium mb-2 block">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="Descrição ou categoria..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Tipo</label>
+              <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="receita">Receitas</SelectItem>
-                  <SelectItem value="despesa">Despesas</SelectItem>
+                  <SelectItem value="income">Receitas</SelectItem>
+                  <SelectItem value="expense">Despesas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label>Categoria</Label>
+              <label className="text-sm font-medium mb-2 block">Categoria</label>
               <Select value={filterCategory} onValueChange={setFilterCategory}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Todas" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -219,90 +193,96 @@ export default function HistoryViewer() {
             </div>
 
             <div>
-              <Label>Data Inicial</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <label className="text-sm font-medium mb-2 block">Período</label>
+              <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange.from && dateRange.to
+                      ? `${format(dateRange.from, "dd/MM/yy")} - ${format(dateRange.to, "dd/MM/yy")}`
+                      : "Selecionar período"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={(range) => {
+                      setDateRange(range || { from: undefined, to: undefined })
+                      if (range?.from && range?.to) {
+                        setIsDatePickerOpen(false)
+                      }
+                    }}
+                    numberOfMonths={2}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
+          </div>
 
-            <div>
-              <Label>Data Final</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
-
-            <div className="flex items-end gap-2">
-              <Button onClick={applyFilters} className="flex-1">
-                Aplicar
-              </Button>
-              <Button variant="outline" onClick={clearFilters}>
-                Limpar
-              </Button>
-            </div>
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchTerm("")
+                setFilterType("all")
+                setFilterCategory("all")
+                setDateRange({ from: undefined, to: undefined })
+              }}
+            >
+              Limpar Filtros
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Transactions List */}
+      {/* Results */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Histórico de Transações</CardTitle>
-              <CardDescription>{transactions.length} transação(ões) encontrada(s)</CardDescription>
-            </div>
-            <Button onClick={exportData} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Exportar CSV
-            </Button>
-          </div>
+          <CardTitle>Resultados ({filteredTransactions.length} transações)</CardTitle>
+          <CardDescription>
+            Total: R${" "}
+            {filteredTransactions
+              .reduce((sum, t) => sum + (t.type === "income" ? t.amount : -t.amount), 0)
+              .toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && (
-            <Alert className="mb-4" variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
           <div className="space-y-4">
-            {transactions.map((transaction) => (
-              <div
-                key={transaction.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className={`p-2 rounded-full ${transaction.type === "receita" ? "bg-green-100" : "bg-red-100"}`}>
-                    {transaction.type === "receita" ? (
-                      <TrendingUp className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <TrendingDown className="h-4 w-4 text-red-600" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-medium">{transaction.description}</p>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <Badge variant="outline">{transaction.category}</Badge>
-                      <span className="flex items-center">
-                        <Calendar className="h-3 w-3 mr-1" />
-                        {format(new Date(transaction.date), "dd/MM/yyyy")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  className={`text-lg font-semibold ${
-                    transaction.type === "receita" ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {transaction.type === "receita" ? "+" : "-"}
-                  {formatCurrency(transaction.amount)}
-                </div>
-              </div>
-            ))}
-
-            {transactions.length === 0 && (
+            {filteredTransactions.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Nenhuma transação encontrada</p>
-                <p className="text-sm">Ajuste os filtros ou adicione novas transações</p>
+                Nenhuma transação encontrada com os filtros aplicados
               </div>
+            ) : (
+              filteredTransactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-medium">{transaction.description}</h3>
+                      <Badge variant={transaction.type === "income" ? "default" : "secondary"}>
+                        {transaction.category}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      {format(new Date(transaction.date), "dd/MM/yyyy", { locale: ptBR })}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div
+                      className={`font-bold text-lg ${transaction.type === "income" ? "text-green-600" : "text-red-600"}`}
+                    >
+                      {transaction.type === "income" ? "+" : "-"}R${" "}
+                      {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-gray-500">{transaction.type === "income" ? "Receita" : "Despesa"}</div>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </CardContent>

@@ -1,415 +1,372 @@
 "use client"
 
-import { useState } from "react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { MessageSquare, Calendar, Clock, CheckCircle, AlertCircle, Info } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/contexts/UserContext"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import UsersManagement from "./UsersManagement"
-import { useToast } from "@/components/ui/use-toast" // Import useToast hook
-import { Label, Input, Textarea, Button, Badge } from "@/components/ui" // Import necessary components
+import { Activity, TrendingUp, Target, Calendar, DollarSign, PieChart, BarChart3, Download } from "lucide-react"
+import type { Transaction } from "@/lib/types"
 
-interface Interacao {
+interface ActivityLog {
   id: string
-  tipo: "nota" | "lembrete" | "observacao" | "alerta"
-  titulo: string
-  conteudo: string
-  dataCreated: Date
-  dataVencimento?: Date
-  status: "pendente" | "concluida" | "cancelada"
-  prioridade: "baixa" | "media" | "alta"
-  categoria: string
+  action: string
+  description: string
+  timestamp: string
+  user_id: string
 }
 
-const tiposInteracao = [
-  { value: "nota", label: "Nota", icon: MessageSquare, color: "bg-blue-100 text-blue-800" },
-  { value: "lembrete", label: "Lembrete", icon: Clock, color: "bg-yellow-100 text-yellow-800" },
-  { value: "observacao", label: "Observação", icon: Info, color: "bg-gray-100 text-gray-800" },
-  { value: "alerta", label: "Alerta", icon: AlertCircle, color: "bg-red-100 text-red-800" },
-]
-
-const prioridades = [
-  { value: "baixa", label: "Baixa", color: "bg-green-100 text-green-800" },
-  { value: "media", label: "Média", color: "bg-yellow-100 text-yellow-800" },
-  { value: "alta", label: "Alta", color: "bg-red-100 text-red-800" },
-]
-
-const { History, Users, Settings } = require("lucide-react")
+interface Goal {
+  id: string
+  title: string
+  target_amount: number
+  current_amount: number
+  deadline: string
+  category: string
+  status: "active" | "completed" | "overdue"
+}
 
 export default function InteracoesPanel() {
-  const [interacoes, setInteracoes] = useState<Interacao[]>([])
-  const [mostrarFormulario, setMostrarFormulario] = useState(false)
-  const [filtroTipo, setFiltroTipo] = useState<string>("todos")
-  const [filtroStatus, setFiltroStatus] = useState<string>("todos")
-  const { toast } = useToast() // Declare useToast hook
-  const [activeTab, setActiveTab] = useState("history")
+  const { user } = useUser()
+  const supabase = createClient()
 
-  const [novaInteracao, setNovaInteracao] = useState({
-    tipo: "nota" as const,
-    titulo: "",
-    conteudo: "",
-    dataVencimento: "",
-    prioridade: "media" as const,
-    categoria: "geral",
-  })
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("activity")
 
-  const adicionarInteracao = () => {
-    if (!novaInteracao.titulo.trim() || !novaInteracao.conteudo.trim()) {
-      toast({
-        title: "Erro",
-        description: "Título e conteúdo são obrigatórios",
-        variant: "destructive",
-      })
-      return
+  useEffect(() => {
+    if (user) {
+      loadData()
     }
+  }, [user])
 
-    const interacao: Interacao = {
-      id: Date.now().toString(),
-      tipo: novaInteracao.tipo,
-      titulo: novaInteracao.titulo,
-      conteudo: novaInteracao.conteudo,
-      dataCreated: new Date(),
-      dataVencimento: novaInteracao.dataVencimento ? new Date(novaInteracao.dataVencimento) : undefined,
-      status: "pendente",
-      prioridade: novaInteracao.prioridade,
-      categoria: novaInteracao.categoria,
+  const loadData = async () => {
+    try {
+      // Load transactions for analytics
+      const { data: transactionData } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", user?.id)
+        .order("created_at", { ascending: false })
+        .limit(50)
+
+      setTransactions(transactionData || [])
+
+      // Simulate activity logs (in a real app, these would come from a logs table)
+      const mockActivityLogs: ActivityLog[] = [
+        {
+          id: "1",
+          action: "transaction_created",
+          description: "Nova transação adicionada: Compra no supermercado",
+          timestamp: new Date().toISOString(),
+          user_id: user?.id || "",
+        },
+        {
+          id: "2",
+          action: "export_csv",
+          description: "Dados exportados para CSV",
+          timestamp: new Date(Date.now() - 3600000).toISOString(),
+          user_id: user?.id || "",
+        },
+        {
+          id: "3",
+          action: "profile_updated",
+          description: "Perfil atualizado",
+          timestamp: new Date(Date.now() - 7200000).toISOString(),
+          user_id: user?.id || "",
+        },
+      ]
+      setActivityLogs(mockActivityLogs)
+
+      // Simulate goals (in a real app, these would come from a goals table)
+      const mockGoals: Goal[] = [
+        {
+          id: "1",
+          title: "Reserva de Emergência",
+          target_amount: 10000,
+          current_amount: 6500,
+          deadline: "2024-12-31",
+          category: "Poupança",
+          status: "active",
+        },
+        {
+          id: "2",
+          title: "Viagem de Férias",
+          target_amount: 5000,
+          current_amount: 2800,
+          deadline: "2024-06-30",
+          category: "Lazer",
+          status: "active",
+        },
+      ]
+      setGoals(mockGoals)
+    } catch (error) {
+      console.error("Error loading data:", error)
+    } finally {
+      setLoading(false)
     }
-
-    setInteracoes([interacao, ...interacoes])
-    setNovaInteracao({
-      tipo: "nota",
-      titulo: "",
-      conteudo: "",
-      dataVencimento: "",
-      prioridade: "media",
-      categoria: "geral",
-    })
-    setMostrarFormulario(false)
-
-    toast({
-      title: "Sucesso",
-      description: "Interação adicionada com sucesso!",
-    })
   }
 
-  const alterarStatus = (id: string, novoStatus: Interacao["status"]) => {
-    setInteracoes(
-      interacoes.map((interacao) => (interacao.id === id ? { ...interacao, status: novoStatus } : interacao)),
+  const getActivityIcon = (action: string) => {
+    switch (action) {
+      case "transaction_created":
+        return <DollarSign className="h-4 w-4" />
+      case "export_csv":
+        return <Download className="h-4 w-4" />
+      case "profile_updated":
+        return <Activity className="h-4 w-4" />
+      default:
+        return <Activity className="h-4 w-4" />
+    }
+  }
+
+  const getActivityColor = (action: string) => {
+    switch (action) {
+      case "transaction_created":
+        return "text-green-600"
+      case "export_csv":
+        return "text-blue-600"
+      case "profile_updated":
+        return "text-purple-600"
+      default:
+        return "text-gray-600"
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
     )
-  }
-
-  const excluirInteracao = (id: string) => {
-    setInteracoes(interacoes.filter((interacao) => interacao.id !== id))
-    toast({
-      title: "Sucesso",
-      description: "Interação excluída com sucesso!",
-    })
-  }
-
-  const interacoesFiltradas = interacoes.filter((interacao) => {
-    const matchTipo = filtroTipo === "todos" || interacao.tipo === filtroTipo
-    const matchStatus = filtroStatus === "todos" || interacao.status === filtroStatus
-    return matchTipo && matchStatus
-  })
-
-  const getTipoConfig = (tipo: string) => {
-    return tiposInteracao.find((t) => t.value === tipo) || tiposInteracao[0]
-  }
-
-  const getPrioridadeConfig = (prioridade: string) => {
-    return prioridades.find((p) => p.value === prioridade) || prioridades[1]
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Painel de Interações</CardTitle>
-          <CardDescription>Gerencie histórico, usuários e configurações do sistema</CardDescription>
-        </CardHeader>
-      </Card>
+      <div>
+        <h2 className="text-2xl font-bold">Painel de Interações</h2>
+        <p className="text-gray-600">Acompanhe atividades, metas e análises</p>
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="history" className="flex items-center gap-2">
-            <History className="h-4 w-4" />
-            Histórico
-          </TabsTrigger>
-          <TabsTrigger value="users" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Usuários
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Configurações
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="activity">Atividades</TabsTrigger>
+          <TabsTrigger value="goals">Metas</TabsTrigger>
+          <TabsTrigger value="analytics">Análises</TabsTrigger>
+          <TabsTrigger value="reports">Relatórios</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="history" className="mt-6">
-          <div className="space-y-6">
-            {/* Filtros */}
-            <Card>
-              <CardContent>
-                <div className="flex gap-4 mb-4">
-                  <div>
-                    <Label className="text-sm">Tipo:</Label>
-                    <select
-                      value={filtroTipo}
-                      onChange={(e) => setFiltroTipo(e.target.value)}
-                      className="ml-2 px-3 py-1 border rounded-md text-sm"
-                    >
-                      <option value="todos">Todos</option>
-                      {tiposInteracao.map((tipo) => (
-                        <option key={tipo.value} value={tipo.value}>
-                          {tipo.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+        <TabsContent value="activity" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Atividades Recentes
+              </CardTitle>
+              <CardDescription>Histórico das suas últimas ações no sistema</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {activityLogs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">Nenhuma atividade registrada</div>
+                ) : (
+                  activityLogs.map((log) => (
+                    <div key={log.id} className="flex items-start gap-3 p-3 border rounded-lg">
+                      <div className={`mt-1 ${getActivityColor(log.action)}`}>{getActivityIcon(log.action)}</div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{log.description}</p>
+                        <p className="text-xs text-gray-500">
+                          {format(new Date(log.timestamp), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                  <div>
-                    <Label className="text-sm">Status:</Label>
-                    <select
-                      value={filtroStatus}
-                      onChange={(e) => setFiltroStatus(e.target.value)}
-                      className="ml-2 px-3 py-1 border rounded-md text-sm"
-                    >
-                      <option value="todos">Todos</option>
-                      <option value="pendente">Pendente</option>
-                      <option value="concluida">Concluída</option>
-                      <option value="cancelada">Cancelada</option>
-                    </select>
-                  </div>
-                </div>
+        <TabsContent value="goals" className="space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-semibold">Suas Metas Financeiras</h3>
+              <p className="text-sm text-gray-600">Acompanhe o progresso das suas metas</p>
+            </div>
+            <Button>
+              <Target className="h-4 w-4 mr-2" />
+              Nova Meta
+            </Button>
+          </div>
 
-                {/* Estatísticas */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <p className="text-sm text-blue-600">Total</p>
-                    <p className="text-xl font-bold text-blue-800">{interacoes.length}</p>
-                  </div>
-                  <div className="bg-yellow-50 p-3 rounded-lg">
-                    <p className="text-sm text-yellow-600">Pendentes</p>
-                    <p className="text-xl font-bold text-yellow-800">
-                      {interacoes.filter((i) => i.status === "pendente").length}
-                    </p>
-                  </div>
-                  <div className="bg-green-50 p-3 rounded-lg">
-                    <p className="text-sm text-green-600">Concluídas</p>
-                    <p className="text-xl font-bold text-green-800">
-                      {interacoes.filter((i) => i.status === "concluida").length}
-                    </p>
-                  </div>
-                  <div className="bg-red-50 p-3 rounded-lg">
-                    <p className="text-sm text-red-600">Alta Prioridade</p>
-                    <p className="text-xl font-bold text-red-800">
-                      {interacoes.filter((i) => i.prioridade === "alta" && i.status === "pendente").length}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {goals.map((goal) => {
+              const progress = (goal.current_amount / goal.target_amount) * 100
+              const isOverdue = new Date(goal.deadline) < new Date() && goal.status !== "completed"
 
-            {/* Formulário */}
-            {mostrarFormulario && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Nova Interação</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Tipo</Label>
-                      <select
-                        value={novaInteracao.tipo}
-                        onChange={(e) => setNovaInteracao({ ...novaInteracao, tipo: e.target.value as any })}
-                        className="w-full px-3 py-2 border rounded-md"
+              return (
+                <Card key={goal.id}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{goal.title}</CardTitle>
+                        <CardDescription>{goal.category}</CardDescription>
+                      </div>
+                      <Badge
+                        variant={isOverdue ? "destructive" : goal.status === "completed" ? "default" : "secondary"}
                       >
-                        {tiposInteracao.map((tipo) => (
-                          <option key={tipo.value} value={tipo.value}>
-                            {tipo.label}
-                          </option>
-                        ))}
-                      </select>
+                        {isOverdue ? "Atrasada" : goal.status === "completed" ? "Concluída" : "Ativa"}
+                      </Badge>
                     </div>
-
-                    <div>
-                      <Label>Prioridade</Label>
-                      <select
-                        value={novaInteracao.prioridade}
-                        onChange={(e) => setNovaInteracao({ ...novaInteracao, prioridade: e.target.value as any })}
-                        className="w-full px-3 py-2 border rounded-md"
-                      >
-                        {prioridades.map((prioridade) => (
-                          <option key={prioridade.value} value={prioridade.value}>
-                            {prioridade.label}
-                          </option>
-                        ))}
-                      </select>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span>Progresso</span>
+                        <span>{progress.toFixed(1)}%</span>
+                      </div>
+                      <Progress value={progress} className="h-2" />
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>R$ {goal.current_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                        <span>R$ {goal.target_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <Calendar className="h-3 w-3" />
+                        Prazo: {format(new Date(goal.deadline), "dd/MM/yyyy", { locale: ptBR })}
+                      </div>
                     </div>
-                  </div>
-
-                  <div>
-                    <Label>Título</Label>
-                    <Input
-                      value={novaInteracao.titulo}
-                      onChange={(e) => setNovaInteracao({ ...novaInteracao, titulo: e.target.value })}
-                      placeholder="Título da interação..."
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Conteúdo</Label>
-                    <Textarea
-                      value={novaInteracao.conteudo}
-                      onChange={(e) => setNovaInteracao({ ...novaInteracao, conteudo: e.target.value })}
-                      placeholder="Descreva a interação..."
-                      rows={4}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Data de Vencimento (opcional)</Label>
-                      <Input
-                        type="datetime-local"
-                        value={novaInteracao.dataVencimento}
-                        onChange={(e) => setNovaInteracao({ ...novaInteracao, dataVencimento: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Categoria</Label>
-                      <Input
-                        value={novaInteracao.categoria}
-                        onChange={(e) => setNovaInteracao({ ...novaInteracao, categoria: e.target.value })}
-                        placeholder="Ex: financeiro, pessoal..."
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button onClick={adicionarInteracao}>Adicionar Interação</Button>
-                    <Button variant="outline" onClick={() => setMostrarFormulario(false)}>
-                      Cancelar
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Lista de Interações */}
-            <div className="space-y-4">
-              {interacoesFiltradas.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 text-center">
-                    <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">Nenhuma interação encontrada.</p>
                   </CardContent>
                 </Card>
-              ) : (
-                interacoesFiltradas.map((interacao) => {
-                  const tipoConfig = getTipoConfig(interacao.tipo)
-                  const prioridadeConfig = getPrioridadeConfig(interacao.prioridade)
-                  const IconeTipo = tipoConfig.icon
-
-                  return (
-                    <Card key={interacao.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <IconeTipo className="w-5 h-5 text-gray-600" />
-                            <div>
-                              <h3 className="font-semibold text-gray-800">{interacao.titulo}</h3>
-                              <p className="text-sm text-gray-500">
-                                {format(interacao.dataCreated, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Badge className={tipoConfig.color}>{tipoConfig.label}</Badge>
-                            <Badge className={prioridadeConfig.color}>{prioridadeConfig.label}</Badge>
-                            <Badge
-                              variant={interacao.status === "concluida" ? "default" : "secondary"}
-                              className={
-                                interacao.status === "concluida"
-                                  ? "bg-green-600"
-                                  : interacao.status === "cancelada"
-                                    ? "bg-red-600"
-                                    : ""
-                              }
-                            >
-                              {interacao.status === "pendente"
-                                ? "Pendente"
-                                : interacao.status === "concluida"
-                                  ? "Concluída"
-                                  : "Cancelada"}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        <p className="text-gray-700 mb-3">{interacao.conteudo}</p>
-
-                        {interacao.dataVencimento && (
-                          <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
-                            <Calendar className="w-4 h-4" />
-                            <span>
-                              Vence em: {format(interacao.dataVencimento, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between">
-                          <Badge variant="outline" className="text-xs">
-                            {interacao.categoria}
-                          </Badge>
-
-                          <div className="flex gap-2">
-                            {interacao.status === "pendente" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => alterarStatus(interacao.id, "concluida")}
-                              >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Concluir
-                              </Button>
-                            )}
-
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => excluirInteracao(interacao.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              Excluir
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })
-              )}
-            </div>
+              )
+            })}
           </div>
         </TabsContent>
 
-        <TabsContent value="users" className="mt-6">
-          <UsersManagement />
-        </TabsContent>
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TrendingUp className="h-4 w-4" />
+                  Tendência Mensal
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">+12.5%</div>
+                <p className="text-xs text-gray-500">Comparado ao mês anterior</p>
+              </CardContent>
+            </Card>
 
-        <TabsContent value="settings" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <PieChart className="h-4 w-4" />
+                  Categoria Principal
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-bold">Alimentação</div>
+                <p className="text-xs text-gray-500">35% dos gastos</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BarChart3 className="h-4 w-4" />
+                  Média Diária
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-bold">R$ 85,50</div>
+                <p className="text-xs text-gray-500">Gastos por dia</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
-              <CardTitle>Configurações do Sistema</CardTitle>
-              <CardDescription>Configure as preferências do sistema</CardDescription>
+              <CardTitle>Insights Financeiros</CardTitle>
+              <CardDescription>Análises baseadas no seu comportamento financeiro</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-500">Configurações em desenvolvimento...</p>
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-medium text-blue-900">💡 Dica de Economia</h4>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Você gastou 15% a mais com alimentação este mês. Considere planejar suas refeições para economizar.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <h4 className="font-medium text-green-900">✅ Parabéns!</h4>
+                  <p className="text-sm text-green-700 mt-1">
+                    Você conseguiu economizar R$ 200 em transporte este mês comparado ao anterior.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <h4 className="font-medium text-yellow-900">⚠️ Atenção</h4>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    Seus gastos com lazer aumentaram 25%. Verifique se está dentro do seu orçamento.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reports" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Relatórios Disponíveis</CardTitle>
+              <CardDescription>Gere relatórios detalhados das suas finanças</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-medium mb-2">Relatório Mensal</h4>
+                  <p className="text-sm text-gray-600 mb-3">Resumo completo das transações do mês atual</p>
+                  <Button size="sm" className="w-full">
+                    <Download className="h-4 w-4 mr-2" />
+                    Gerar PDF
+                  </Button>
+                </div>
+
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-medium mb-2">Análise por Categoria</h4>
+                  <p className="text-sm text-gray-600 mb-3">Detalhamento dos gastos por categoria</p>
+                  <Button size="sm" variant="outline" className="w-full bg-transparent">
+                    <Download className="h-4 w-4 mr-2" />
+                    Gerar Excel
+                  </Button>
+                </div>
+
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-medium mb-2">Fluxo de Caixa</h4>
+                  <p className="text-sm text-gray-600 mb-3">Análise de entradas e saídas por período</p>
+                  <Button size="sm" variant="outline" className="w-full bg-transparent">
+                    <Download className="h-4 w-4 mr-2" />
+                    Gerar PDF
+                  </Button>
+                </div>
+
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-medium mb-2">Comparativo Anual</h4>
+                  <p className="text-sm text-gray-600 mb-3">Comparação mês a mês do ano atual</p>
+                  <Button size="sm" variant="outline" className="w-full bg-transparent">
+                    <Download className="h-4 w-4 mr-2" />
+                    Gerar PDF
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

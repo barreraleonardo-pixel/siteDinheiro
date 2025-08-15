@@ -3,38 +3,98 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
-import { Loader2, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Loader2, Mail, Lock, User } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export default function LoginPage() {
+  const router = useRouter()
+  const { toast } = useToast()
+  const supabase = createClient()
+
+  const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [message, setMessage] = useState("")
-  const router = useRouter()
 
-  // Check if Supabase is configured
-  if (!isSupabaseConfigured()) {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!supabase) return
+
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "Sucesso!",
+        description: "Login realizado com sucesso.",
+      })
+
+      router.push("/")
+      router.refresh()
+    } catch (error: any) {
+      toast({
+        title: "Erro no login",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!supabase) return
+
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "Conta criada!",
+        description: "Verifique seu email para confirmar a conta.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Erro no cadastro",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!supabase) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-center">Configuração Necessária</CardTitle>
-            <CardDescription className="text-center">O Supabase não está configurado</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>Configure as variáveis de ambiente do Supabase antes de continuar.</AlertDescription>
+              <AlertDescription>Sistema não configurado. Configure o Supabase primeiro.</AlertDescription>
             </Alert>
             <Button className="w-full mt-4" onClick={() => router.push("/setup")}>
               Ir para Configuração
@@ -45,78 +105,12 @@ export default function LoginPage() {
     )
   }
 
-  const supabase = createClient()
-
-  if (!supabase) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>Erro ao conectar com o Supabase. Verifique a configuração.</AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError("")
-
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) throw error
-
-      router.push("/")
-      router.refresh()
-    } catch (error: any) {
-      setError(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError("")
-    setMessage("")
-
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name: name,
-          },
-        },
-      })
-
-      if (error) throw error
-
-      setMessage("Verifique seu email para confirmar a conta!")
-    } catch (error: any) {
-      setError(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">Sistema Financeiro</CardTitle>
-          <CardDescription className="text-center">Faça login ou crie sua conta para continuar</CardDescription>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Financeiro Pessoal</CardTitle>
+          <CardDescription>Faça login ou crie sua conta para continuar</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
@@ -129,25 +123,33 @@ export default function LoginPage() {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Senha</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -159,38 +161,50 @@ export default function LoginPage() {
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nome</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    disabled={loading}
-                  />
+                  <Label htmlFor="name">Nome completo</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="Seu nome"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email-signup">Email</Label>
-                  <Input
-                    id="email-signup"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={loading}
-                  />
+                  <Label htmlFor="signup-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-email"
+                      type="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password-signup">Senha</Label>
-                  <Input
-                    id="password-signup"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={loading}
-                    minLength={6}
-                  />
+                  <Label htmlFor="signup-password">Senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="signup-password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10"
+                      required
+                      minLength={6}
+                    />
+                  </div>
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -199,19 +213,6 @@ export default function LoginPage() {
               </form>
             </TabsContent>
           </Tabs>
-
-          {error && (
-            <Alert className="mt-4" variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {message && (
-            <Alert className="mt-4">
-              <AlertDescription>{message}</AlertDescription>
-            </Alert>
-          )}
         </CardContent>
       </Card>
     </div>

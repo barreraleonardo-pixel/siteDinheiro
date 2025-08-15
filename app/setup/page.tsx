@@ -1,41 +1,19 @@
 "use client"
 
-import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, AlertCircle, Copy, ExternalLink } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { CheckCircle, Copy, ExternalLink, Database, Key, Globe } from "lucide-react"
+import Link from "next/link"
 
 export default function SetupPage() {
-  const [supabaseUrl, setSupabaseUrl] = useState("")
-  const [supabaseKey, setSupabaseKey] = useState("")
-  const [step, setStep] = useState(1)
-
-  const envContent = `NEXT_PUBLIC_SUPABASE_URL=${supabaseUrl}
-NEXT_PUBLIC_SUPABASE_ANON_KEY=${supabaseKey}`
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-  }
-
-  const sqlScript = `-- Criar tabelas principais
-CREATE TABLE IF NOT EXISTS public.usuarios (
+  const sqlScript = `-- Criar tabela de transações
+CREATE TABLE IF NOT EXISTS transacoes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  nome TEXT,
-  tipo_usuario TEXT DEFAULT 'usuario' CHECK (tipo_usuario IN ('admin', 'usuario')),
-  ativo BOOLEAN DEFAULT true,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.transacoes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  usuario_id UUID REFERENCES public.usuarios(id) ON DELETE CASCADE,
-  tipo TEXT NOT NULL CHECK (tipo IN ('receita', 'despesa')),
-  categoria TEXT NOT NULL,
+  usuario_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  tipo VARCHAR(10) NOT NULL CHECK (tipo IN ('receita', 'despesa')),
+  categoria VARCHAR(50) NOT NULL,
   descricao TEXT NOT NULL,
   valor DECIMAL(10,2) NOT NULL,
   data_transacao DATE NOT NULL,
@@ -43,225 +21,204 @@ CREATE TABLE IF NOT EXISTS public.transacoes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.historico_acoes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  usuario_id UUID REFERENCES public.usuarios(id) ON DELETE CASCADE,
-  acao TEXT NOT NULL,
-  detalhes JSONB,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Habilitar RLS
-ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transacoes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.historico_acoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transacoes ENABLE ROW LEVEL SECURITY;
 
--- Políticas RLS
-CREATE POLICY "Usuários podem ver próprios dados" ON public.usuarios
-  FOR SELECT USING (auth.uid()::text = id::text);
+-- Política para usuários verem apenas suas transações
+CREATE POLICY "Usuários podem ver suas próprias transações" ON transacoes
+  FOR ALL USING (auth.uid() = usuario_id);
 
-CREATE POLICY "Usuários podem atualizar próprios dados" ON public.usuarios
-  FOR UPDATE USING (auth.uid()::text = id::text);
+-- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_transacoes_usuario_id ON transacoes(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data_transacao);
+CREATE INDEX IF NOT EXISTS idx_transacoes_tipo ON transacoes(tipo);
 
-CREATE POLICY "Permitir inserção de usuários" ON public.usuarios
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Usuários podem ver próprias transações" ON public.transacoes
-  FOR ALL USING (auth.uid()::text = usuario_id::text);
-
-CREATE POLICY "Usuários podem ver próprio histórico" ON public.historico_acoes
-  FOR ALL USING (auth.uid()::text = usuario_id::text);
-
--- Função para criar usuário automaticamente
-CREATE OR REPLACE FUNCTION public.handle_new_user()
+-- Função para atualizar updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
-DECLARE
-  user_count INTEGER;
 BEGIN
-  -- Contar usuários existentes
-  SELECT COUNT(*) INTO user_count FROM public.usuarios;
-  
-  -- Inserir novo usuário
-  INSERT INTO public.usuarios (id, email, nome, tipo_usuario)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-    CASE WHEN user_count = 0 THEN 'admin' ELSE 'usuario' END
-  );
-  
+  NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ language 'plpgsql';
 
--- Trigger para criar usuário
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();`
+-- Trigger para atualizar updated_at automaticamente
+CREATE TRIGGER update_transacoes_updated_at 
+  BEFORE UPDATE ON transacoes 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();`
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Configuração do Sistema Financeiro</h1>
-          <p className="mt-2 text-gray-600">Configure o Supabase para começar a usar o sistema</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Configuração do Sistema Financeiro</h1>
+          <p className="text-lg text-gray-600">Siga os passos abaixo para configurar seu sistema financeiro pessoal</p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
           {/* Passo 1: Criar projeto Supabase */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  1
-                </span>
-                Criar Projeto Supabase
-              </CardTitle>
-              <CardDescription>Crie uma conta e projeto no Supabase</CardDescription>
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                  <span className="text-sm font-semibold text-blue-600">1</span>
+                </div>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Globe className="h-5 w-5" />
+                    Criar Projeto no Supabase
+                  </CardTitle>
+                  <CardDescription>Crie uma conta gratuita e um novo projeto</CardDescription>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <p className="text-sm text-gray-600">
-                  1. Acesse{" "}
-                  <a
-                    href="https://supabase.com"
-                    target="_blank"
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
-                    rel="noreferrer"
-                  >
-                    supabase.com <ExternalLink className="w-3 h-3" />
-                  </a>
-                </p>
-                <p className="text-sm text-gray-600">2. Crie uma conta gratuita</p>
-                <p className="text-sm text-gray-600">3. Crie um novo projeto</p>
-                <p className="text-sm text-gray-600">4. Anote a URL e a chave anônima</p>
-              </div>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>
+                  Acesse{" "}
+                  <Link href="https://supabase.com" className="text-blue-600 hover:underline" target="_blank">
+                    supabase.com
+                  </Link>
+                </li>
+                <li>Clique em "Start your project" e crie uma conta</li>
+                <li>Clique em "New Project"</li>
+                <li>Escolha um nome e senha para o banco de dados</li>
+                <li>Aguarde a criação do projeto (pode levar alguns minutos)</li>
+              </ol>
+              <Button asChild variant="outline" className="w-full bg-transparent">
+                <Link href="https://supabase.com" target="_blank">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Abrir Supabase
+                </Link>
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Passo 2: Configurar variáveis */}
+          {/* Passo 2: Configurar banco de dados */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  2
-                </span>
-                Configurar Variáveis
-              </CardTitle>
-              <CardDescription>Insira as credenciais do seu projeto</CardDescription>
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
+                  <span className="text-sm font-semibold text-green-600">2</span>
+                </div>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Executar Script SQL
+                  </CardTitle>
+                  <CardDescription>Configure as tabelas e políticas de segurança</CardDescription>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="supabase-url">URL do Supabase</Label>
-                <Input
-                  id="supabase-url"
-                  value={supabaseUrl}
-                  onChange={(e) => setSupabaseUrl(e.target.value)}
-                  placeholder="https://seu-projeto.supabase.co"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="supabase-key">Chave Anônima</Label>
-                <Input
-                  id="supabase-key"
-                  value={supabaseKey}
-                  onChange={(e) => setSupabaseKey(e.target.value)}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                />
-              </div>
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>No painel do Supabase, vá para "SQL Editor"</li>
+                <li>Clique em "New Query"</li>
+                <li>Cole o script SQL abaixo</li>
+                <li>Clique em "Run" para executar</li>
+              </ol>
 
-              {supabaseUrl && supabaseKey && (
-                <div className="mt-4">
-                  <Label>Arquivo .env.local</Label>
-                  <div className="mt-2 p-3 bg-gray-100 rounded-md text-sm font-mono relative">
-                    <pre>{envContent}</pre>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="absolute top-2 right-2 bg-transparent"
-                      onClick={() => copyToClipboard(envContent)}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Copie este conteúdo para o arquivo .env.local na raiz do projeto
-                  </p>
-                </div>
-              )}
+              <div className="relative">
+                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto max-h-64">
+                  <code>{sqlScript}</code>
+                </pre>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="absolute top-2 right-2 bg-transparent"
+                  onClick={() => copyToClipboard(sqlScript)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Passo 3: Executar SQL */}
-          <Card className="md:col-span-2">
+          {/* Passo 3: Configurar variáveis de ambiente */}
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  3
-                </span>
-                Executar Script SQL
-              </CardTitle>
-              <CardDescription>Execute este script no SQL Editor do Supabase</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="relative">
-                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-md text-sm overflow-x-auto max-h-96">
-                    {sqlScript}
-                  </pre>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="absolute top-2 right-2 bg-transparent"
-                    onClick={() => copyToClipboard(sqlScript)}
-                  >
-                    <Copy className="w-4 h-4" />
-                  </Button>
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100">
+                  <span className="text-sm font-semibold text-purple-600">3</span>
                 </div>
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    1. Vá para o SQL Editor no painel do Supabase
-                    <br />
-                    2. Cole e execute este script
-                    <br />
-                    3. Reinicie a aplicação após configurar as variáveis
-                  </AlertDescription>
-                </Alert>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Key className="h-5 w-5" />
+                    Configurar Variáveis de Ambiente
+                  </CardTitle>
+                  <CardDescription>Adicione as chaves do seu projeto</CardDescription>
+                </div>
               </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <ol className="list-decimal list-inside space-y-2 text-sm">
+                <li>No Supabase, vá para "Settings" → "API"</li>
+                <li>Copie a "Project URL" e a "anon public" key</li>
+                <li>
+                  Crie um arquivo <Badge variant="secondary">.env.local</Badge> na raiz do projeto
+                </li>
+                <li>Adicione as variáveis conforme o exemplo abaixo</li>
+              </ol>
+
+              <div className="relative">
+                <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm">
+                  <code>{`NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anonima-aqui`}</code>
+                </pre>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="absolute top-2 right-2 bg-transparent"
+                  onClick={() =>
+                    copyToClipboard(`NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anonima-aqui`)
+                  }
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <Alert>
+                <AlertDescription>
+                  <strong>Importante:</strong> Substitua os valores de exemplo pelas suas chaves reais do Supabase.
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
 
           {/* Passo 4: Finalizar */}
-          <Card className="md:col-span-2">
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-6 h-6 text-green-500" />
-                Sistema Pronto!
-              </CardTitle>
-              <CardDescription>Após configurar tudo, você poderá usar o sistema</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <Alert className="border-green-200 bg-green-50">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    <strong>Funcionalidades disponíveis:</strong>
-                    <br />• Controle de receitas e despesas
-                    <br />• Dashboard com estatísticas
-                    <br />• Histórico com filtros avançados
-                    <br />• Exportação para CSV
-                    <br />• Gerenciamento de usuários
-                    <br />• Sistema de permissões
-                  </AlertDescription>
-                </Alert>
-
-                <div className="text-center">
-                  <Button asChild>
-                    <a href="/login">Ir para Login</a>
-                  </Button>
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
                 </div>
+                <div>
+                  <CardTitle>Configuração Concluída!</CardTitle>
+                  <CardDescription>Reinicie o servidor e faça seu primeiro login</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Após configurar as variáveis de ambiente, reinicie o servidor de desenvolvimento com{" "}
+                  <Badge variant="secondary">npm run dev</Badge>
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex gap-4">
+                <Button asChild className="flex-1">
+                  <Link href="/login">Ir para Login</Link>
+                </Button>
+                <Button asChild variant="outline" className="flex-1 bg-transparent">
+                  <Link href="/">Página Inicial</Link>
+                </Button>
               </div>
             </CardContent>
           </Card>

@@ -1,5 +1,5 @@
 {
-  "name": "financial-planning",
+  "name": "financeiro-pessoal",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,15 +10,14 @@
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
-    "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-avatar": "latest",
+    "@radix-ui/react-calendar": "^1.0.4",
     "@radix-ui/react-dialog": "latest",
     "@radix-ui/react-dropdown-menu": "latest",
     "@radix-ui/react-label": "latest",
     "@radix-ui/react-popover": "latest",
     "@radix-ui/react-progress": "latest",
     "@radix-ui/react-select": "latest",
-    "@radix-ui/react-separator": "^1.0.3",
     "@radix-ui/react-slot": "latest",
     "@radix-ui/react-switch": "latest",
     "@radix-ui/react-tabs": "latest",
@@ -44,7 +43,7 @@
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
-    "eslint-config-next": "14.1.0",
+    "eslint-config-next": "14.0.4",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
-import FinancialDashboard from "@/components/financial-dashboard"
+import FinancialControl from "@/financial-control"
 
 export default function HomePage() {
   const { user, loading } = useUser()
@@ -79,5 +79,5 @@ export default function HomePage() {
     )
   }
 
-  return <FinancialDashboard />
+  return <FinancialControl />
 }

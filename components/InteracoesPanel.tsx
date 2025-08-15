@@ -2,141 +2,137 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/contexts/UserContext"
+import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Activity, TrendingUp, Target, Calendar, DollarSign, PieChart, BarChart3, Download } from "lucide-react"
+import { Activity, TrendingUp, Target, BarChart3, PieChart, AlertTriangle } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 
-interface ActivityLog {
+interface MonthlyGoal {
   id: string
-  action: string
-  description: string
-  timestamp: string
-  user_id: string
-}
-
-interface Goal {
-  id: string
-  title: string
+  category: string
   target_amount: number
   current_amount: number
-  deadline: string
-  category: string
-  status: "active" | "completed" | "overdue"
+  month: string
+  year: number
 }
 
 export default function InteracoesPanel() {
   const { user } = useUser()
+  const { toast } = useToast()
   const supabase = createClient()
 
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
-  const [goals, setGoals] = useState<Goal[]>([])
+  const [monthlyGoals, setMonthlyGoals] = useState<MonthlyGoal[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("activity")
 
   useEffect(() => {
-    if (user) {
+    if (user && supabase) {
       loadData()
     }
-  }, [user])
+  }, [user, supabase])
 
   const loadData = async () => {
+    if (!supabase) return
+
     try {
-      // Load transactions for analytics
-      const { data: transactionData } = await supabase
-        .from("transactions")
+      // Load transactions
+      const { data: transactionData, error: transactionError } = await supabase
+        .from("transacoes")
         .select("*")
-        .eq("user_id", user?.id)
-        .order("created_at", { ascending: false })
-        .limit(50)
+        .eq("usuario_id", user?.id)
+        .order("data_transacao", { ascending: false })
 
-      setTransactions(transactionData || [])
+      if (transactionError) throw transactionError
 
-      // Simulate activity logs (in a real app, these would come from a logs table)
-      const mockActivityLogs: ActivityLog[] = [
+      // Convert data to match Transaction interface
+      const convertedData: Transaction[] = (transactionData || []).map((item) => ({
+        id: item.id,
+        user_id: item.usuario_id,
+        type: item.tipo === "receita" ? "income" : "expense",
+        category: item.categoria,
+        description: item.descricao,
+        amount: Number(item.valor),
+        date: item.data_transacao,
+        created_at: item.created_at,
+      }))
+
+      setTransactions(convertedData)
+
+      // Simulate monthly goals
+      const mockGoals: MonthlyGoal[] = [
         {
           id: "1",
-          action: "transaction_created",
-          description: "Nova transação adicionada: Compra no supermercado",
-          timestamp: new Date().toISOString(),
-          user_id: user?.id || "",
+          category: "Alimentação",
+          target_amount: 800,
+          current_amount: 650,
+          month: "dezembro",
+          year: 2024,
         },
         {
           id: "2",
-          action: "export_csv",
-          description: "Dados exportados para CSV",
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          user_id: user?.id || "",
+          category: "Transporte",
+          target_amount: 400,
+          current_amount: 320,
+          month: "dezembro",
+          year: 2024,
         },
         {
           id: "3",
-          action: "profile_updated",
-          description: "Perfil atualizado",
-          timestamp: new Date(Date.now() - 7200000).toISOString(),
-          user_id: user?.id || "",
-        },
-      ]
-      setActivityLogs(mockActivityLogs)
-
-      // Simulate goals (in a real app, these would come from a goals table)
-      const mockGoals: Goal[] = [
-        {
-          id: "1",
-          title: "Reserva de Emergência",
-          target_amount: 10000,
-          current_amount: 6500,
-          deadline: "2024-12-31",
-          category: "Poupança",
-          status: "active",
-        },
-        {
-          id: "2",
-          title: "Viagem de Férias",
-          target_amount: 5000,
-          current_amount: 2800,
-          deadline: "2024-06-30",
           category: "Lazer",
-          status: "active",
+          target_amount: 300,
+          current_amount: 450,
+          month: "dezembro",
+          year: 2024,
         },
       ]
-      setGoals(mockGoals)
+
+      setMonthlyGoals(mockGoals)
     } catch (error) {
       console.error("Error loading data:", error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
   }
 
-  const getActivityIcon = (action: string) => {
-    switch (action) {
-      case "transaction_created":
-        return <DollarSign className="h-4 w-4" />
-      case "export_csv":
-        return <Download className="h-4 w-4" />
-      case "profile_updated":
-        return <Activity className="h-4 w-4" />
-      default:
-        return <Activity className="h-4 w-4" />
-    }
+  const getRecentActivity = () => {
+    return transactions.slice(0, 5).map((t) => ({
+      id: t.id,
+      description: `${t.type === "income" ? "Receita" : "Despesa"}: ${t.description}`,
+      amount: t.amount,
+      type: t.type,
+      date: t.date,
+    }))
   }
 
-  const getActivityColor = (action: string) => {
-    switch (action) {
-      case "transaction_created":
-        return "text-green-600"
-      case "export_csv":
-        return "text-blue-600"
-      case "profile_updated":
-        return "text-purple-600"
-      default:
-        return "text-gray-600"
+  const getMonthlyInsights = () => {
+    const currentMonth = new Date().getMonth()
+    const currentYear = new Date().getFullYear()
+
+    const monthlyTransactions = transactions.filter((t) => {
+      const transactionDate = new Date(t.date)
+      return transactionDate.getMonth() === currentMonth && transactionDate.getFullYear() === currentYear
+    })
+
+    const totalIncome = monthlyTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+
+    const totalExpenses = monthlyTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
+
+    return {
+      totalIncome,
+      totalExpenses,
+      balance: totalIncome - totalExpenses,
+      transactionCount: monthlyTransactions.length,
+      savingsRate: totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome) * 100 : 0,
     }
   }
 
@@ -148,229 +144,182 @@ export default function InteracoesPanel() {
     )
   }
 
+  const recentActivity = getRecentActivity()
+  const insights = getMonthlyInsights()
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Painel de Interações</h2>
-        <p className="text-gray-600">Acompanhe atividades, metas e análises</p>
+      {/* Insights Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Taxa de Poupança</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{insights.savingsRate.toFixed(1)}%</div>
+            <p className="text-xs text-muted-foreground">Este mês</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Atividade</CardTitle>
+            <Activity className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{insights.transactionCount}</div>
+            <p className="text-xs text-muted-foreground">Transações este mês</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Média Diária</CardTitle>
+            <BarChart3 className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">
+              R$ {(insights.totalExpenses / new Date().getDate()).toFixed(0)}
+            </div>
+            <p className="text-xs text-muted-foreground">Gastos por dia</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="activity">Atividades</TabsTrigger>
-          <TabsTrigger value="goals">Metas</TabsTrigger>
-          <TabsTrigger value="analytics">Análises</TabsTrigger>
-          <TabsTrigger value="reports">Relatórios</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="activity" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Atividades Recentes
-              </CardTitle>
-              <CardDescription>Histórico das suas últimas ações no sistema</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {activityLogs.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">Nenhuma atividade registrada</div>
-                ) : (
-                  activityLogs.map((log) => (
-                    <div key={log.id} className="flex items-start gap-3 p-3 border rounded-lg">
-                      <div className={`mt-1 ${getActivityColor(log.action)}`}>{getActivityIcon(log.action)}</div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{log.description}</p>
-                        <p className="text-xs text-gray-500">
-                          {format(new Date(log.timestamp), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                        </p>
-                      </div>
+      {/* Recent Activity */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Atividade Recente
+          </CardTitle>
+          <CardDescription>Suas últimas transações</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {recentActivity.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">Nenhuma atividade recente</div>
+            ) : (
+              recentActivity.map((activity) => (
+                <div key={activity.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-2 h-2 rounded-full ${activity.type === "income" ? "bg-green-500" : "bg-red-500"}`}
+                    />
+                    <div>
+                      <p className="text-sm font-medium">{activity.description}</p>
+                      <p className="text-xs text-gray-500">
+                        {format(new Date(activity.date), "dd/MM/yyyy", { locale: ptBR })}
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="goals" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h3 className="text-lg font-semibold">Suas Metas Financeiras</h3>
-              <p className="text-sm text-gray-600">Acompanhe o progresso das suas metas</p>
-            </div>
-            <Button>
-              <Target className="h-4 w-4 mr-2" />
-              Nova Meta
-            </Button>
+                  </div>
+                  <div
+                    className={`text-sm font-medium ${activity.type === "income" ? "text-green-600" : "text-red-600"}`}
+                  >
+                    {activity.type === "income" ? "+" : "-"}R$ {activity.amount.toFixed(2)}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {goals.map((goal) => {
-              const progress = (goal.current_amount / goal.target_amount) * 100
-              const isOverdue = new Date(goal.deadline) < new Date() && goal.status !== "completed"
+      {/* Monthly Goals */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            Metas Mensais
+          </CardTitle>
+          <CardDescription>Acompanhe seus objetivos de gastos por categoria</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            {monthlyGoals.map((goal) => {
+              const percentage = (goal.current_amount / goal.target_amount) * 100
+              const isOverBudget = percentage > 100
 
               return (
-                <Card key={goal.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{goal.title}</CardTitle>
-                        <CardDescription>{goal.category}</CardDescription>
-                      </div>
-                      <Badge
-                        variant={isOverdue ? "destructive" : goal.status === "completed" ? "default" : "secondary"}
-                      >
-                        {isOverdue ? "Atrasada" : goal.status === "completed" ? "Concluída" : "Ativa"}
-                      </Badge>
+                <div key={goal.id} className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{goal.category}</span>
+                      {isOverBudget && (
+                        <Badge variant="destructive" className="text-xs">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Acima do orçamento
+                        </Badge>
+                      )}
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span>Progresso</span>
-                        <span>{progress.toFixed(1)}%</span>
-                      </div>
-                      <Progress value={progress} className="h-2" />
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>R$ {goal.current_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                        <span>R$ {goal.target_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <Calendar className="h-3 w-3" />
-                        Prazo: {format(new Date(goal.deadline), "dd/MM/yyyy", { locale: ptBR })}
-                      </div>
+                    <div className="text-sm text-gray-600">
+                      R$ {goal.current_amount.toFixed(2)} / R$ {goal.target_amount.toFixed(2)}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                  <Progress value={Math.min(percentage, 100)} className={`h-2 ${isOverBudget ? "bg-red-100" : ""}`} />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>{percentage.toFixed(1)}% utilizado</span>
+                    <span>
+                      {isOverBudget
+                        ? `R$ ${(goal.current_amount - goal.target_amount).toFixed(2)} acima`
+                        : `R$ ${(goal.target_amount - goal.current_amount).toFixed(2)} restante`}
+                    </span>
+                  </div>
+                </div>
               )
             })}
           </div>
-        </TabsContent>
+        </CardContent>
+      </Card>
 
-        <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="h-4 w-4" />
-                  Tendência Mensal
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">+12.5%</div>
-                <p className="text-xs text-gray-500">Comparado ao mês anterior</p>
-              </CardContent>
-            </Card>
+      {/* Financial Health Score */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PieChart className="h-5 w-5" />
+            Score de Saúde Financeira
+          </CardTitle>
+          <CardDescription>Avaliação baseada nos seus hábitos financeiros</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="text-center">
+              <div className="text-4xl font-bold text-blue-600 mb-2">
+                {Math.max(0, Math.min(100, 70 + insights.savingsRate)).toFixed(0)}
+              </div>
+              <div className="text-sm text-gray-600">de 100 pontos</div>
+            </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <PieChart className="h-4 w-4" />
-                  Categoria Principal
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-lg font-bold">Alimentação</div>
-                <p className="text-xs text-gray-500">35% dos gastos</p>
-              </CardContent>
-            </Card>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Taxa de Poupança</span>
+                <Badge variant={insights.savingsRate > 20 ? "default" : "secondary"}>
+                  {insights.savingsRate > 20 ? "Boa" : "Pode melhorar"}
+                </Badge>
+              </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BarChart3 className="h-4 w-4" />
-                  Média Diária
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-lg font-bold">R$ 85,50</div>
-                <p className="text-xs text-gray-500">Gastos por dia</p>
-              </CardContent>
-            </Card>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Controle de Gastos</span>
+                <Badge
+                  variant={
+                    monthlyGoals.filter((g) => g.current_amount <= g.target_amount).length > 1 ? "default" : "secondary"
+                  }
+                >
+                  {monthlyGoals.filter((g) => g.current_amount <= g.target_amount).length > 1 ? "Bom" : "Atenção"}
+                </Badge>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Frequência de Registro</span>
+                <Badge variant={insights.transactionCount > 10 ? "default" : "secondary"}>
+                  {insights.transactionCount > 10 ? "Ativa" : "Baixa"}
+                </Badge>
+              </div>
+            </div>
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Insights Financeiros</CardTitle>
-              <CardDescription>Análises baseadas no seu comportamento financeiro</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-medium text-blue-900">💡 Dica de Economia</h4>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Você gastou 15% a mais com alimentação este mês. Considere planejar suas refeições para economizar.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="font-medium text-green-900">✅ Parabéns!</h4>
-                  <p className="text-sm text-green-700 mt-1">
-                    Você conseguiu economizar R$ 200 em transporte este mês comparado ao anterior.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <h4 className="font-medium text-yellow-900">⚠️ Atenção</h4>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    Seus gastos com lazer aumentaram 25%. Verifique se está dentro do seu orçamento.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="reports" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Relatórios Disponíveis</CardTitle>
-              <CardDescription>Gere relatórios detalhados das suas finanças</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Relatório Mensal</h4>
-                  <p className="text-sm text-gray-600 mb-3">Resumo completo das transações do mês atual</p>
-                  <Button size="sm" className="w-full">
-                    <Download className="h-4 w-4 mr-2" />
-                    Gerar PDF
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Análise por Categoria</h4>
-                  <p className="text-sm text-gray-600 mb-3">Detalhamento dos gastos por categoria</p>
-                  <Button size="sm" variant="outline" className="w-full bg-transparent">
-                    <Download className="h-4 w-4 mr-2" />
-                    Gerar Excel
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Fluxo de Caixa</h4>
-                  <p className="text-sm text-gray-600 mb-3">Análise de entradas e saídas por período</p>
-                  <Button size="sm" variant="outline" className="w-full bg-transparent">
-                    <Download className="h-4 w-4 mr-2" />
-                    Gerar PDF
-                  </Button>
-                </div>
-
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Comparativo Anual</h4>
-                  <p className="text-sm text-gray-600 mb-3">Comparação mês a mês do ano atual</p>
-                  <Button size="sm" variant="outline" className="w-full bg-transparent">
-                    <Download className="h-4 w-4 mr-2" />
-                    Gerar PDF
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,22 +1,28 @@
 "use client"
 
-import { CardDescription } from "@/components/ui/card"
-
-import { useState, useMemo } from "react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import type React from "react"
+import { useState, useEffect, useMemo } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Progress } from "@/components/ui/progress"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
+import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/contexts/UserContext"
 import {
   Plus,
   Edit,
@@ -29,31 +35,20 @@ import {
   Search,
   Filter,
   AlertTriangle,
-  Home,
-  Target,
-  PieChart,
   X,
   Check,
   CheckCircle,
   Clock,
-  Calculator,
+  Download,
 } from "lucide-react"
-import { Bell, AlertCircle } from "lucide-react"
 import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
 import { motion, AnimatePresence } from "framer-motion"
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-} from "recharts"
+import type { Transaction as TransactionType, MonthlyStats, CategoryStats } from "@/lib/types"
+import Header from "@/components/Header"
+import HistoryViewer from "@/components/HistoryViewer"
+import UsersManagement from "@/components/UsersManagement"
+import InteracoesPanel from "@/components/InteracoesPanel"
 
 interface Cartao {
   id: string
@@ -312,73 +307,47 @@ const categoriasPlanoIniciais: CategoriaPlano[] = [
   },
 ]
 
-interface Transaction {
-  id: string
-  type: "receita" | "despesa"
-  category: string
-  description: string
-  amount: number
-  date: string
+const categories2 = {
+  income: ["Salário", "Freelance", "Investimentos", "Vendas", "Outros"],
+  expense: ["Alimentação", "Transporte", "Moradia", "Saúde", "Educação", "Lazer", "Compras", "Contas", "Outros"],
 }
 
 export default function FinancialControl() {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [newTransaction, setNewTransaction] = useState({
-    type: "receita" as "receita" | "despesa",
-    category: "",
-    description: "",
-    amount: "",
-    date: new Date().toISOString().split("T")[0],
+  const { user } = useUser()
+  const { toast } = useToast()
+  const supabase = createClient()
+
+  const [transactions, setTransactions] = useState<TransactionType[]>([])
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats>({
+    totalIncome: 0,
+    totalExpenses: 0,
+    balance: 0,
+    transactionCount: 0,
   })
+  const [categoryStats, setCategoryStats] = useState<CategoryStats[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("home")
 
-  const categories = {
-    receita: ["Salário", "Freelance", "Investimentos", "Outros"],
-    despesa: ["Alimentação", "Transporte", "Moradia", "Saúde", "Lazer", "Outros"],
-  }
+  // Form states
+  const [isAddingTransaction, setIsAddingTransaction] = useState(false)
+  const [description, setDescription] = useState("")
+  const [amount, setAmount] = useState("")
+  const [type, setType] = useState<"income" | "expense">("expense")
+  const [category, setCategory] = useState("")
+  const [date, setDate] = useState<Date>(new Date())
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
 
-  const addTransaction = () => {
-    if (!newTransaction.description || !newTransaction.amount || !newTransaction.category) {
-      alert("Por favor, preencha todos os campos")
-      return
-    }
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all")
+  const [filterCategory, setFilterCategory] = useState<string>("all")
 
-    const transaction: Transaction = {
-      id: Date.now().toString(),
-      type: newTransaction.type,
-      category: newTransaction.category,
-      description: newTransaction.description,
-      amount: Number.parseFloat(newTransaction.amount),
-      date: newTransaction.date,
-    }
-
-    setTransactions([...transactions, transaction])
-    setNewTransaction({
-      type: "receita",
-      category: "",
-      description: "",
-      amount: "",
-      date: new Date().toISOString().split("T")[0],
-    })
-  }
-
-  const totalReceitas = transactions.filter((t) => t.type === "receita").reduce((sum, t) => sum + t.amount, 0)
-
-  const totalDespesas = transactions.filter((t) => t.type === "despesa").reduce((sum, t) => sum + t.amount, 0)
-
-  const saldo = totalReceitas - totalDespesas
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value)
-  }
   const [cartoes, setCartoes] = useState<Cartao[]>(cartoesIniciais)
   const [despesas, setDespesas] = useState<Despesa[]>(despesasIniciais)
   const [receitas, setReceitas] = useState<Receita[]>(receitasIniciais)
   const [categoriasPlano, setCategoriasPlano] = useState<CategoriaPlano[]>(categoriasPlanoIniciais)
-  const [activeTab, setActiveTab] = useState("home")
-  const { toast } = useToast()
+  //const [activeTab, setActiveTab] = useState("home")
+  //const { toast } = useToast()
 
   // Estados para filtros do dashboard
   const [anoSelecionado, setAnoSelecionado] = useState<number>(2025)
@@ -461,6 +430,196 @@ export default function FinancialControl() {
 
   // Obter mês atual
   const mesAtual = new Date().getMonth()
+
+  useEffect(() => {
+    if (user && supabase) {
+      loadTransactions()
+    }
+  }, [user, supabase])
+
+  const loadTransactions = async () => {
+    if (!supabase) return
+
+    try {
+      const { data, error } = await supabase
+        .from("transacoes")
+        .select("*")
+        .eq("usuario_id", user?.id)
+        .order("data_transacao", { ascending: false })
+
+      if (error) throw error
+
+      // Convert data to match Transaction interface
+      const convertedData: TransactionType[] = (data || []).map((item) => ({
+        id: item.id,
+        user_id: item.usuario_id,
+        type: item.tipo === "receita" ? "income" : "expense",
+        category: item.categoria,
+        description: item.descricao,
+        amount: Number(item.valor),
+        date: item.data_transacao,
+        created_at: item.created_at,
+      }))
+
+      setTransactions(convertedData)
+      calculateStats(convertedData)
+    } catch (error) {
+      console.error("Error loading transactions:", error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as transações",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const calculateStats = (transactionData: TransactionType[]) => {
+    const currentMonth = new Date().getMonth()
+    const currentYear = new Date().getFullYear()
+
+    const monthlyTransactions = transactionData.filter((t) => {
+      const transactionDate = new Date(t.date)
+      return transactionDate.getMonth() === currentMonth && transactionDate.getFullYear() === currentYear
+    })
+
+    const totalIncome = monthlyTransactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+
+    const totalExpenses = monthlyTransactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
+
+    setMonthlyStats({
+      totalIncome,
+      totalExpenses,
+      balance: totalIncome - totalExpenses,
+      transactionCount: monthlyTransactions.length,
+    })
+
+    // Calculate category stats
+    const categoryMap = new Map<string, { amount: number; count: number }>()
+
+    monthlyTransactions.forEach((t) => {
+      const existing = categoryMap.get(t.category) || { amount: 0, count: 0 }
+      categoryMap.set(t.category, {
+        amount: existing.amount + t.amount,
+        count: existing.count + 1,
+      })
+    })
+
+    const stats: CategoryStats[] = Array.from(categoryMap.entries())
+      .map(([category, data]) => ({
+        category,
+        amount: data.amount,
+        count: data.count,
+        percentage: totalExpenses > 0 ? (data.amount / totalExpenses) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount)
+
+    setCategoryStats(stats)
+  }
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!supabase) return
+
+    if (!description || !amount || !category) {
+      toast({
+        title: "Erro",
+        description: "Preencha todos os campos obrigatórios",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const { error } = await supabase.from("transacoes").insert({
+        usuario_id: user?.id,
+        descricao: description,
+        valor: Number.parseFloat(amount),
+        tipo: type === "income" ? "receita" : "despesa",
+        categoria: category,
+        data_transacao: format(date, "yyyy-MM-dd"),
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "Sucesso",
+        description: "Transação adicionada com sucesso!",
+      })
+
+      // Reset form
+      setDescription("")
+      setAmount("")
+      setCategory("")
+      setDate(new Date())
+      setIsAddingTransaction(false)
+
+      // Reload data
+      loadTransactions()
+    } catch (error) {
+      console.error("Error adding transaction:", error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível adicionar a transação",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const exportToCSV = () => {
+    const headers = ["Data", "Descrição", "Categoria", "Tipo", "Valor"]
+    const csvContent = [
+      headers.join(","),
+      ...transactions.map((t) =>
+        [
+          format(new Date(t.date), "dd/MM/yyyy"),
+          `"${t.description}"`,
+          `"${t.category}"`,
+          t.type === "income" ? "Receita" : "Despesa",
+          t.amount.toFixed(2).replace(".", ","),
+        ].join(","),
+      ),
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", `transacoes_${format(new Date(), "yyyy-MM")}.csv`)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const filteredTransactions = transactions.filter((t) => {
+    const matchesSearch =
+      t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesType = filterType === "all" || t.type === filterType
+    const matchesCategory = filterCategory === "all" || t.category === filterCategory
+
+    return matchesSearch && matchesType && matchesCategory
+  })
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value)
+  }
 
   // Função para marcar parcela como paga
   const marcarParcelaPaga = (despesaId: string, parcelaId: string) => {
@@ -1326,735 +1485,297 @@ export default function FinancialControl() {
     calcularTotaisDashboard.receitasPlanejadasMesAtual - calcularTotaisDashboard.despesasRealizadasMesAtual
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-8"
-        >
-          <Card className="bg-white/80 backdrop-blur-sm shadow-xl rounded-2xl">
-            <CardHeader className="text-center">
-              <CardTitle className="text-3xl md:text-4xl bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-extrabold">
-                Finanças Pessoais
-              </CardTitle>
-              <p className="text-gray-600 mt-2">Controle financeiro inteligente</p>
-            </CardHeader>
-          </Card>
-        </motion.div>
+    <div className="min-h-screen bg-gray-50">
+      <Header />
 
+      <div className="container mx-auto px-4 py-8 pt-24">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-8 bg-white rounded-2xl shadow-lg p-2">
-            <TabsTrigger
-              value="home"
-              className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white"
-            >
-              <Home className="w-4 h-4 mr-2" />
-              Home
-            </TabsTrigger>
-            <TabsTrigger
-              value="planejamento"
-              className="rounded-xl data-[state=active]:bg-orange-500 data-[state=active]:text-white"
-            >
-              <PieChart className="w-4 h-4 mr-2" />
-              Planejamento
-            </TabsTrigger>
-            <TabsTrigger
-              value="despesas"
-              className="rounded-xl data-[state=active]:bg-blue-500 data-[state=active]:text-white"
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              Despesas
-            </TabsTrigger>
-            <TabsTrigger
-              value="receitas"
-              className="rounded-xl data-[state=active]:bg-green-500 data-[state=active]:text-white"
-            >
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Receitas
-            </TabsTrigger>
-            <TabsTrigger
-              value="cartoes"
-              className="rounded-xl data-[state=active]:bg-purple-500 data-[state=active]:text-white"
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              Cartões
-            </TabsTrigger>
-            <TabsTrigger value="transactions">Transações</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="home">Dashboard</TabsTrigger>
+            <TabsTrigger value="planejamento">Planejamento</TabsTrigger>
+            <TabsTrigger value="despesas">Despesas</TabsTrigger>
+            <TabsTrigger value="receitas">Receitas</TabsTrigger>
+            <TabsTrigger value="cartoes">Cartões</TabsTrigger>
+            <TabsTrigger value="history">Histórico</TabsTrigger>
+            <TabsTrigger value="users">Usuários</TabsTrigger>
+            <TabsTrigger value="interactions">Interações</TabsTrigger>
           </TabsList>
 
-          {/* Aba Home - Dashboard Aprimorado */}
-          <TabsContent value="home">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              {/* Filtros do Dashboard */}
-              <Card className="bg-white rounded-2xl shadow-lg mb-6">
-                <CardContent className="p-6">
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700">Ano:</label>
-                      <Select
-                        value={anoSelecionado.toString()}
-                        onValueChange={(value) => setAnoSelecionado(Number(value))}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[2023, 2024, 2025, 2026, 2027].map((ano) => (
-                            <SelectItem key={ano} value={ano.toString()}>
-                              {ano}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700">Mês:</label>
-                      <Select value={mesSelecionadoDash} onValueChange={setMesSelecionadoDash}>
-                        <SelectTrigger className="w-48">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="todos">Todos os meses</SelectItem>
-                          {meses.map((mes) => (
-                            <SelectItem key={mes} value={mes}>
-                              {mes}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Resumo de Dois Meses */}
-              <Card className="bg-white rounded-2xl shadow-lg mb-6">
-                <CardHeader>
-                  <CardTitle className="text-xl font-bold text-gray-800">Resumo Mensal - {anoSelecionado}</CardTitle>
+          <TabsContent value="home" className="space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Receitas</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-green-600" />
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Mês Esquerda */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-blue-600 mb-4 text-center">
-                        {dadosDoisMeses.mesEsquerda.nome}
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-green-700 mb-2">Receitas</h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>Planejado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesEsquerda.dados.receitasPlanejadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Realizado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesEsquerda.dados.receitasRealizadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-red-700 mb-2">Despesas</h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>Planejado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesEsquerda.dados.despesasPlanejadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Realizado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesEsquerda.dados.despesasRealizadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Comprometido:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesEsquerda.dados.despesasComprometidas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-blue-50 p-4 rounded-lg text-center">
-                          <h4 className="font-semibold text-blue-700 mb-2">Saldo</h4>
-                          <p className="text-xs text-gray-600 mb-1">Receita Planejada - Despesa Realizada</p>
-                          <p
-                            className={`text-xl font-bold ${dadosDoisMeses.mesEsquerda.dados.saldo >= 0 ? "text-green-600" : "text-red-600"}`}
-                          >
-                            R$ {dadosDoisMeses.mesEsquerda.dados.saldo.toLocaleString("pt-BR")}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Mês Direita */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-blue-600 mb-4 text-center">
-                        {dadosDoisMeses.mesDireita.nome}
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-green-700 mb-2">Receitas</h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>Planejado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesDireita.dados.receitasPlanejadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Realizado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesDireita.dados.receitasRealizadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-red-700 mb-2">Despesas</h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>Planejado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesDireita.dados.despesasPlanejadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Realizado:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesDireita.dados.despesasRealizadas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Comprometido:</span>
-                              <span>
-                                R$ {dadosDoisMeses.mesDireita.dados.despesasComprometidas.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="bg-blue-50 p-4 rounded-lg text-center">
-                          <h4 className="font-semibold text-blue-700 mb-2">Saldo</h4>
-                          <p className="text-xs text-gray-600 mb-1">Receita Planejada - Despesa Realizada</p>
-                          <p
-                            className={`text-xl font-bold ${dadosDoisMeses.mesDireita.dados.saldo >= 0 ? "text-green-600" : "text-red-600"}`}
-                          >
-                            R$ {dadosDoisMeses.mesDireita.dados.saldo.toLocaleString("pt-BR")}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="text-2xl font-bold text-green-600">
+                    R${" "}
+                    {calcularTotaisDashboard.receitasPlanejadas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                   </div>
+                  <p className="text-xs text-muted-foreground">Este mês</p>
                 </CardContent>
               </Card>
 
-              {/* Alertas de Vencimento */}
-              {mostrarAlertas && parcelasProximasVencimento.length > 0 && (
-                <Card className="bg-white rounded-2xl shadow-lg mb-6 border-l-4 border-l-orange-500">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2 text-orange-700">
-                        <Bell className="w-5 h-5" />
-                        Alertas de Vencimento
-                        <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                          {parcelasProximasVencimento.length}
-                        </Badge>
-                      </CardTitle>
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                          <Label className="text-sm text-gray-600">Dias de antecedência:</Label>
-                          <Select
-                            value={diasAlertaVencimento.toString()}
-                            onValueChange={(value) => setDiasAlertaVencimento(Number(value))}
-                          >
-                            <SelectTrigger className="w-20">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Despesas</CardTitle>
+                  <TrendingDown className="h-4 w-4 text-red-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600">
+                    R${" "}
+                    {calcularTotaisDashboard.despesasRealizadas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Este mês</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Saldo</CardTitle>
+                  <DollarSign className="h-4 w-4 text-blue-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${saldoTotal >= 0 ? "text-green-600" : "text-red-600"}`}>
+                    R$ {saldoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Este mês</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Transações</CardTitle>
+                  <Badge variant="secondary">{calcularTotaisDashboard.despesasComprometidas}</Badge>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{calcularTotaisDashboard.despesasComprometidas}</div>
+                  <p className="text-xs text-muted-foreground">Este mês</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Add Transaction Button */}
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Transações Recentes</h2>
+              <div className="flex gap-2">
+                <Button onClick={exportToCSV} variant="outline">
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar CSV
+                </Button>
+                <Dialog open={isAddingTransaction} onOpenChange={setIsAddingTransaction}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Nova Transação
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Adicionar Transação</DialogTitle>
+                      <DialogDescription>Adicione uma nova receita ou despesa</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleAddTransaction} className="space-y-4">
+                      <div>
+                        <Label htmlFor="description">Descrição</Label>
+                        <Input
+                          id="description"
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          placeholder="Ex: Compra no supermercado"
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="amount">Valor</Label>
+                          <Input
+                            id="amount"
+                            type="number"
+                            step="0.01"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            placeholder="0,00"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <Label htmlFor="type">Tipo</Label>
+                          <Select value={type} onValueChange={(value: "income" | "expense") => setType(value)}>
+                            <SelectTrigger>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="3">3</SelectItem>
-                              <SelectItem value="7">7</SelectItem>
-                              <SelectItem value="15">15</SelectItem>
-                              <SelectItem value="30">30</SelectItem>
+                              <SelectItem value="income">Receita</SelectItem>
+                              <SelectItem value="expense">Despesa</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                        <Button size="sm" variant="ghost" onClick={() => setMostrarAlertas(false)}>
-                          <X className="w-4 h-4" />
-                        </Button>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                      <div className="bg-orange-50 p-3 rounded-lg">
-                        <p className="text-sm text-orange-700 font-medium">Valor Total</p>
-                        <p className="text-lg font-bold text-orange-800">
-                          R$ {impactoFinanceiroAlertas.valorTotal.toLocaleString("pt-BR")}
-                        </p>
+
+                      <div>
+                        <Label htmlFor="category">Categoria</Label>
+                        <Select value={category} onValueChange={setCategory}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma categoria" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories2[type].map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="bg-red-50 p-3 rounded-lg">
-                        <p className="text-sm text-red-700 font-medium">Críticas (≤3 dias)</p>
-                        <p className="text-lg font-bold text-red-800">
-                          R$ {impactoFinanceiroAlertas.valorCritico.toLocaleString("pt-BR")}
-                        </p>
-                      </div>
-                      <div className="bg-blue-50 p-3 rounded-lg">
-                        <p className="text-sm text-blue-700 font-medium">Parcelas</p>
-                        <p className="text-lg font-bold text-blue-800">
-                          {impactoFinanceiroAlertas.quantidadeTotal} total
-                          {impactoFinanceiroAlertas.quantidadeCritica > 0 && (
-                            <span className="text-red-600">
-                              {" "}
-                              ({impactoFinanceiroAlertas.quantidadeCritica} críticas)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3 max-h-80 overflow-y-auto">
-                      {parcelasProximasVencimento.map((parcela) => (
-                        <motion.div
-                          key={parcela.id}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className={`flex items-center justify-between p-4 rounded-lg border-l-4 ${
-                            parcela.urgencia === "critica"
-                              ? "bg-red-50 border-l-red-500"
-                              : parcela.urgencia === "alta"
-                                ? "bg-orange-50 border-l-orange-500"
-                                : "bg-yellow-50 border-l-yellow-500"
-                          }`}
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-semibold text-gray-800">{parcela.despesaNome}</h4>
-                              <Badge variant="outline" className="text-xs">
-                                {parcela.numeroParcela}/{parcela.totalParcelas}
-                              </Badge>
-                              <Badge variant="outline" className="text-xs bg-gray-50">
-                                {parcela.categoria}
-                              </Badge>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm text-gray-600">
-                              <div>
-                                <span className="font-medium">Valor:</span> R${" "}
-                                {parcela.valorParcela.toLocaleString("pt-BR")}
-                              </div>
-                              <div>
-                                <span className="font-medium">Cartão:</span> {parcela.cartaoNome}
-                              </div>
-                              <div>
-                                <span className="font-medium">Vencimento:</span>{" "}
-                                {format(parcela.dataVencimento, "dd/MM/yyyy")}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {parcela.urgencia === "critica" ? (
-                                  <AlertCircle className="w-4 h-4 text-red-500" />
-                                ) : parcela.urgencia === "alta" ? (
-                                  <Clock className="w-4 h-4 text-orange-500" />
-                                ) : (
-                                  <Calendar className="w-4 h-4 text-yellow-500" />
-                                )}
-                                <span
-                                  className={`font-medium ${
-                                    parcela.urgencia === "critica"
-                                      ? "text-red-600"
-                                      : parcela.urgencia === "alta"
-                                        ? "text-orange-600"
-                                        : "text-yellow-600"
-                                  }`}
-                                >
-                                  {parcela.diasRestantes === 0
-                                    ? "Vence hoje!"
-                                    : parcela.diasRestantes === 1
-                                      ? "Vence amanhã"
-                                      : `${parcela.diasRestantes} dias`}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
+
+                      <div>
+                        <Label>Data</Label>
+                        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                          <PopoverTrigger asChild>
                             <Button
-                              size="sm"
                               variant="outline"
-                              onClick={() => {
-                                const despesa = despesas.find((d) => d.parcelasDespesa.some((p) => p.id === parcela.id))
-                                if (despesa) {
-                                  marcarParcelaPaga(despesa.id, parcela.id)
+                              className="w-full justify-start text-left font-normal bg-transparent"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {format(date, "dd/MM/yyyy", { locale: ptBR })}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={date}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setDate(date)
+                                  setIsDatePickerOpen(false)
                                 }
                               }}
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                            >
-                              <CheckCircle className="w-4 h-4 mr-1" />
-                              Pagar
-                            </Button>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                    {parcelasProximasVencimento.length > 5 && (
-                      <div className="mt-4 text-center">
-                        <p className="text-sm text-gray-500">
-                          Mostrando {Math.min(5, parcelasProximasVencimento.length)} de{" "}
-                          {parcelasProximasVencimento.length} parcelas próximas do vencimento
-                        </p>
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
 
-              {/* Botão para reativar alertas quando ocultos */}
-              {!mostrarAlertas && parcelasProximasVencimento.length > 0 && (
-                <Card className="bg-orange-50 rounded-2xl shadow-lg mb-6 border border-orange-200">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Bell className="w-5 h-5 text-orange-600" />
-                        <div>
-                          <p className="font-medium text-orange-800">
-                            {parcelasProximasVencimento.length} parcela(s) próximas do vencimento
-                          </p>
-                          <p className="text-sm text-orange-600">
-                            Valor total: R$ {impactoFinanceiroAlertas.valorTotal.toLocaleString("pt-BR")}
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setIsAddingTransaction(false)}>
+                          Cancelar
+                        </Button>
+                        <Button type="submit">Adicionar</Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Buscar transações..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
+              <Select value={filterType} onValueChange={(value: "all" | "income" | "expense") => setFilterType(value)}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  <SelectItem value="income">Receitas</SelectItem>
+                  <SelectItem value="expense">Despesas</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as categorias</SelectItem>
+                  {[...categories2.income, ...categories2.expense].map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Transactions List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Transações ({filteredTransactions.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {filteredTransactions.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">Nenhuma transação encontrada</div>
+                  ) : (
+                    filteredTransactions.slice(0, 10).map((transaction) => (
+                      <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium">{transaction.description}</h3>
+                            <Badge variant={transaction.type === "income" ? "default" : "secondary"}>
+                              {transaction.category}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-500">
+                            {format(new Date(transaction.date), "dd/MM/yyyy", { locale: ptBR })}
                           </p>
                         </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setMostrarAlertas(true)}
-                        className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                      >
-                        Mostrar Alertas
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Cards de Resumo Anuais */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <Card className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Receitas Planejadas (Ano)</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          R$ {calcularTotaisDashboard.receitasPlanejadas.toLocaleString("pt-BR")}
-                        </p>
-                      </div>
-                      <TrendingUp className="h-8 w-8 text-green-500" />
-                    </div>
-                    <div className="mt-4">
-                      <Progress
-                        value={
-                          calcularTotaisDashboard.receitasPlanejadas > 0
-                            ? (calcularTotaisDashboard.receitasRealizadas /
-                                calcularTotaisDashboard.receitasPlanejadas) *
-                              100
-                            : 0
-                        }
-                        className="h-2"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Realizado: R$ {calcularTotaisDashboard.receitasRealizadas.toLocaleString("pt-BR")}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Despesas Realizadas (Ano)</p>
-                        <p className="text-2xl font-bold text-red-600">
-                          R$ {calcularTotaisDashboard.despesasRealizadas.toLocaleString("pt-BR")}
-                        </p>
-                      </div>
-                      <TrendingDown className="h-8 w-8 text-red-500" />
-                    </div>
-                    <div className="mt-4">
-                      <Progress
-                        value={
-                          calcularTotaisDashboard.despesasPlanejadas > 0
-                            ? (calcularTotaisDashboard.despesasRealizadas /
-                                calcularTotaisDashboard.despesasPlanejadas) *
-                              100
-                            : 0
-                        }
-                        className="h-2"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Planejado: R$ {calcularTotaisDashboard.despesasPlanejadas.toLocaleString("pt-BR")}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Saldo Anual</p>
-                        <p className="text-xs text-gray-500 mb-1">Receita Planejada - Despesa Realizada</p>
-                        <p className={`text-2xl font-bold ${saldoTotal >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          R$ {saldoTotal.toLocaleString("pt-BR")}
-                        </p>
-                      </div>
-                      <DollarSign className={`h-8 w-8 ${saldoTotal >= 0 ? "text-green-500" : "text-red-500"}`} />
-                    </div>
-                    <div className="mt-4">
-                      <div className="flex items-center mt-2">
-                        <div
-                          className={`h-2 w-2 rounded-full mr-2 ${saldoTotal >= 0 ? "bg-green-500" : "bg-red-500"}`}
-                        ></div>
-                        <span className="text-xs text-gray-600">
-                          {saldoTotal >= 0 ? "Saldo positivo" : "Saldo negativo"}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Despesas Comprometidas</p>
-                        <p className="text-2xl font-bold text-orange-600">
-                          R$ {calcularTotaisDashboard.despesasComprometidas.toLocaleString("pt-BR")}
-                        </p>
-                      </div>
-                      <Target className="h-8 w-8 text-orange-500" />
-                    </div>
-                    <div className="mt-4">
-                      <p className="text-xs text-gray-500">Todas as parcelas (pagas + pendentes)</p>
-                      <div className="flex items-center mt-2">
-                        <div className="h-2 w-2 rounded-full mr-2 bg-orange-500"></div>
-                        <span className="text-xs text-gray-600">Valores comprometidos</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Progresso por Categoria Separado */}
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">Progresso por Categoria</h2>
-
-                {/* Receitas */}
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-green-600 mb-4">Receitas</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {progressoCategorias.receitas.map((categoria, index) => (
-                      <Card key={categoria.nome} className="bg-white rounded-xl shadow-md">
-                        <CardContent className="p-4">
-                          <h4 className="font-semibold text-gray-800 mb-2">{categoria.nome}</h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span>Mês Atual:</span>
-                              <span>
-                                R$ {categoria.realizadoMes.toLocaleString("pt-BR")} / R${" "}
-                                {categoria.planejadoMes.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <Progress value={Math.min(categoria.progressoMes, 100)} className="h-2" />
-                            <p className="text-xs text-gray-500">{categoria.progressoMes.toFixed(1)}% do planejado</p>
+                        <div className="text-right">
+                          <div
+                            className={`font-bold ${transaction.type === "income" ? "text-green-600" : "text-red-600"}`}
+                          >
+                            {transaction.type === "income" ? "+" : "-"}R${" "}
+                            {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
+              </CardContent>
+            </Card>
 
-                {/* Despesas */}
-                <div>
-                  <h3 className="text-xl font-semibold text-red-600 mb-4">Despesas</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {progressoCategorias.despesas.map((categoria, index) => (
-                      <Card key={categoria.nome} className="bg-white rounded-xl shadow-md">
-                        <CardContent className="p-4">
-                          <h4 className="font-semibold text-gray-800 mb-2">{categoria.nome}</h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span>Mês Atual:</span>
-                              <span>
-                                R$ {categoria.realizadoMes.toLocaleString("pt-BR")} / R${" "}
-                                {categoria.planejadoMes.toLocaleString("pt-BR")}
-                              </span>
-                            </div>
-                            <Progress
-                              value={Math.min(categoria.progressoMes, 100)}
-                              className={`h-2 ${categoria.progressoMes > 100 ? "bg-red-200" : ""}`}
-                            />
-                            <p className={`text-xs ${categoria.progressoMes > 100 ? "text-red-600" : "text-gray-500"}`}>
-                              {categoria.progressoMes.toFixed(1)}% do planejado
-                              {categoria.progressoMes > 100 && " - Acima do orçamento!"}
-                            </p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gráfico Mensalizado - Planejado x Realizado */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <Card className="bg-white rounded-2xl shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-xl font-bold text-gray-800">
-                      Evolução Anual - Planejado x Realizado
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={dadosGraficoBarras}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="mes" />
-                        <YAxis />
-                        <Tooltip
-                          formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR")}`, ""]}
-                          labelFormatter={(label) => `Mês: ${label}`}
-                        />
-                        <Legend />
-                        <Line type="monotone" dataKey="Receita Planejada" stroke="#10B981" strokeDasharray="5 5" />
-                        <Line type="monotone" dataKey="Receita Realizada" stroke="#10B981" strokeWidth={2} />
-                        <Line type="monotone" dataKey="Despesa Planejada" stroke="#EF4444" strokeDasharray="5 5" />
-                        <Line type="monotone" dataKey="Despesa Realizada" stroke="#EF4444" strokeWidth={2} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Gráfico de Pizza */}
-                <Card className="bg-white rounded-2xl shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-xl font-bold text-gray-800">
-                      Distribuição de Despesas Realizadas
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <RechartsPieChart>
-                        <Pie
-                          data={dadosGraficoPizza}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {dadosGraficoPizza.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR")}`, "Valor"]} />
-                      </RechartsPieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Resumo Mês a Mês com Toggle de Saldo Comprometido */}
-              <Card className="bg-white rounded-2xl shadow-lg mb-8">
+            {/* Category Stats */}
+            {categoryStats.length > 0 && (
+              <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-xl font-bold text-gray-800">
-                      Resumo Anual {anoSelecionado} - Mês a Mês
-                    </CardTitle>
-                    <div className="flex items-center gap-3">
-                      <Calculator className="w-5 h-5 text-gray-600" />
-                      <Label htmlFor="saldo-comprometido" className="text-sm font-medium text-gray-700">
-                        Saldo Comprometido
-                      </Label>
-                      <Switch
-                        id="saldo-comprometido"
-                        checked={saldoComprometido}
-                        onCheckedChange={setSaldoComprometido}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {saldoComprometido
-                      ? "Cálculo: Receita Planejada - Despesa Comprometida (para meses futuros)"
-                      : "Cálculo: Receita Planejada - Despesa Realizada"}
-                  </p>
+                  <CardTitle>Gastos por Categoria</CardTitle>
+                  <CardDescription>Distribuição das despesas deste mês</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="p-2 text-center">Mês</th>
-                          <th className="text-center p-2">Receitas Plan.</th>
-                          <th className="text-center p-2 text-green-700">Receitas Real.</th>
-                          <th className="text-center p-2">Despesas Plan.</th>
-                          <th className="text-center p-2 text-red-700">Despesas Real.</th>
-                          <th className="text-center p-2 text-orange-600">Comprometido</th>
-                          <th className="text-center p-2">Saldo</th>
-                          <th className="text-center p-2">Saldo Acumulado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resumoMensalAno.map((item, index) => (
-                          <tr
-                            key={item.mes}
-                            className={`border-b hover:bg-gray-50 ${index === mesAtual ? "bg-blue-50" : ""}`}
-                          >
-                            <td className="p-2 font-medium text-center">
-                              {item.mes}
-                              {index === mesAtual && (
-                                <Badge variant="secondary" className="ml-2">
-                                  Atual
-                                </Badge>
-                              )}
-                            </td>
-                            <td className="text-center p-2 text-slate-600">
-                              R$ {item.receitasPlanejadas.toLocaleString("pt-BR")}
-                            </td>
-                            <td className="text-center p-2">R$ {item.receitasRealizadas.toLocaleString("pt-BR")}</td>
-                            <td className="text-center p-2 text-slate-600">
-                              R$ {item.despesasPlanejadas.toLocaleString("pt-BR")}
-                            </td>
-                            <td className="text-center p-2">R$ {item.despesasRealizadas.toLocaleString("pt-BR")}</td>
-                            <td className="text-center p-2 text-orange-600">
-                              R$ {item.despesasComprometidas.toLocaleString("pt-BR")}
-                            </td>
-                            <td
-                              className={`text-center p-2 font-semibold ${item.saldo >= 0 ? "text-green-600" : "text-red-600"}`}
-                            >
-                              R$ {item.saldo.toLocaleString("pt-BR")}
-                              {saldoComprometido && item.isFuturo && !item.temValorRealizado && (
-                                <Badge variant="outline" className="ml-1 text-xs">
-                                  Comp.
-                                </Badge>
-                              )}
-                            </td>
-                            <td
-                              className={`text-center p-2 font-bold ${item.saldoAcumulado >= 0 ? "text-green-600" : "text-red-600"}`}
-                            >
-                              R$ {item.saldoAcumulado.toLocaleString("pt-BR")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-4">
+                    {categoryStats.slice(0, 5).map((stat) => (
+                      <div key={stat.category} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>{stat.category}</span>
+                          <span className="font-medium">
+                            R$ {stat.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (
+                            {stat.percentage.toFixed(1)}%)
+                          </span>
+                        </div>
+                        <Progress value={stat.percentage} className="h-2" />
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
-            </motion.div>
+            )}
           </TabsContent>
 
           {/* Aba Planejamento */}
@@ -2704,548 +2425,19 @@ export default function FinancialControl() {
               })}
             </motion.div>
           </TabsContent>
-          <TabsContent value="transactions">
-            <Card>
-              <CardHeader>
-                <CardTitle>Transações</CardTitle>
-                <CardDescription>Lista de todas as suas transações</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {transactions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500">Nenhuma transação encontrada</p>
-                    <p className="text-sm text-gray-400">Adicione sua primeira transação para começar</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {transactions
-                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                      .map((transaction) => (
-                        <div
-                          key={transaction.id}
-                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div
-                              className={`p-2 rounded-full ${
-                                transaction.type === "receita" ? "bg-green-100" : "bg-red-100"
-                              }`}
-                            >
-                              {transaction.type === "receita" ? (
-                                <TrendingUp className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <TrendingDown className="h-4 w-4 text-red-600" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-medium">{transaction.description}</p>
-                              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                                <Badge variant="outline">{transaction.category}</Badge>
-                                <span className="flex items-center">
-                                  <Calendar className="h-3 w-3 mr-1" />
-                                  {new Date(transaction.date).toLocaleDateString("pt-BR")}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div
-                            className={`text-lg font-semibold ${
-                              transaction.type === "receita" ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            {transaction.type === "receita" ? "+" : "-"}
-                            {formatCurrency(transaction.amount)}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+
+          <TabsContent value="history">
+            <HistoryViewer />
+          </TabsContent>
+
+          <TabsContent value="users">
+            <UsersManagement />
+          </TabsContent>
+
+          <TabsContent value="interactions">
+            <InteracoesPanel />
           </TabsContent>
         </Tabs>
-
-        {/* Botões Flutuantes */}
-        <div className="fixed bottom-6 right-6 flex flex-col gap-4">
-          {activeTab === "planejamento" && (
-            <Dialog open={modalCategoriaPlanoAberto} onOpenChange={setModalCategoriaPlanoAberto}>
-              <DialogTrigger asChild>
-                <Button
-                  className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all bg-orange-600 hover:bg-orange-700"
-                  onClick={resetFormularioCategoriaPlano}
-                >
-                  <Plus className="w-6 h-6" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Nova Categoria de Planejamento</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label>Nome da Categoria</Label>
-                    <Input
-                      value={novaCategoriaPlano.nome}
-                      onChange={(e) => setNovaCategoriaPlano({ ...novaCategoriaPlano, nome: e.target.value })}
-                      placeholder="Ex: Salário, Alimentação..."
-                    />
-                  </div>
-                  <div>
-                    <Label>Tipo</Label>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <Switch
-                        checked={novaCategoriaPlano.tipo === "despesa"}
-                        onCheckedChange={(checked) =>
-                          setNovaCategoriaPlano({ ...novaCategoriaPlano, tipo: checked ? "despesa" : "receita" })
-                        }
-                      />
-                      <Label>{novaCategoriaPlano.tipo === "receita" ? "Receita" : "Despesa"}</Label>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Centro de Custo</Label>
-                    <div className="space-y-2">
-                      <Select
-                        value={novaCategoriaPlano.centroCusto}
-                        onValueChange={(value) => {
-                          if (value === "novo") {
-                            setModalCentroCustoAberto(true)
-                          } else {
-                            setNovaCategoriaPlano({ ...novaCategoriaPlano, centroCusto: value })
-                          }
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione ou crie novo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="novo">+ Criar novo Centro de Custo</SelectItem>
-                          {todosCentrosCusto.map((centro) => (
-                            <SelectItem key={centro} value={centro}>
-                              <div className="flex items-center justify-between w-full">
-                                <span>{centro}</span>
-                                {centrosCustoPersonalizados.includes(centro) && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      excluirCentroCusto(centro)
-                                    }}
-                                    className="ml-2 h-4 w-4 p-0 text-red-500 hover:text-red-700"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Valor Anual Planejado</Label>
-                    <Input
-                      type="number"
-                      value={novaCategoriaPlano.valorAnual}
-                      onChange={(e) =>
-                        setNovaCategoriaPlano({ ...novaCategoriaPlano, valorAnual: Number(e.target.value) })
-                      }
-                      placeholder="0,00"
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={adicionarCategoriaPlano} className="flex-1">
-                      Adicionar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        resetFormularioCategoriaPlano()
-                        setModalCategoriaPlanoAberto(false)
-                      }}
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {activeTab === "despesas" && (
-            <Dialog open={modalDespesaAberto} onOpenChange={setModalDespesaAberto}>
-              <DialogTrigger asChild>
-                <Button
-                  className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all bg-blue-600 hover:bg-blue-700"
-                  onClick={resetFormularioDespesa}
-                >
-                  <Plus className="w-6 h-6" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editandoItem ? "Editar Despesa" : "Nova Despesa"}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label>Nome da Despesa</Label>
-                    <Input
-                      value={novaDespesa.nome}
-                      onChange={(e) => setNovaDespesa({ ...novaDespesa, nome: e.target.value })}
-                      placeholder="Ex: Supermercado"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Valor Total</Label>
-                      <Input
-                        type="number"
-                        value={novaDespesa.valorTotal}
-                        onChange={(e) => setNovaDespesa({ ...novaDespesa, valorTotal: Number(e.target.value) })}
-                        placeholder="0,00"
-                      />
-                    </div>
-                    <div>
-                      <Label>Parcelas</Label>
-                      <Input
-                        type="number"
-                        value={novaDespesa.parcelas}
-                        onChange={(e) => setNovaDespesa({ ...novaDespesa, parcelas: Number(e.target.value) })}
-                        min="1"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Data da Compra</Label>
-                    <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start bg-transparent">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {novaDespesa.dataCompra ? format(novaDespesa.dataCompra, "dd/MM/yyyy") : "Selecione"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={novaDespesa.dataCompra}
-                          onSelect={(date) => {
-                            if (date) {
-                              setNovaDespesa({ ...novaDespesa, dataCompra: date })
-                              setCalendarOpen(false)
-                            }
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div>
-                    <Label>Categoria</Label>
-                    <Select
-                      value={novaDespesa.categoria}
-                      onChange={(e) => setNovaDespesa({ ...novaDespesa, categoria: e.target.value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoriasDespesas.map((categoria) => (
-                          <SelectItem key={categoria} value={categoria}>
-                            {categoria}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Centro de Custo</Label>
-                    <Select
-                      value={novaDespesa.centroCusto}
-                      onValueChange={(value) => setNovaDespesa({ ...novaDespesa, centroCusto: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {todosCentrosCusto.map((centro) => (
-                          <SelectItem key={centro} value={centro}>
-                            {centro}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Cartão</Label>
-                    <Select
-                      value={novaDespesa.cartaoId}
-                      onValueChange={(value) => setNovaDespesa({ ...novaDespesa, cartaoId: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cartoes.map((cartao) => (
-                          <SelectItem key={cartao.id} value={cartao.id}>
-                            {cartao.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Observações</Label>
-                    <Textarea
-                      value={novaDespesa.observacoes}
-                      onChange={(e) => setNovaDespesa({ ...novaDespesa, observacoes: e.target.value })}
-                      placeholder="Observações opcionais..."
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={novaDespesa.essencial || false}
-                      onCheckedChange={(checked) => setNovaDespesa({ ...novaDespesa, essencial: checked })}
-                    />
-                    <Label>Esta é uma despesa essencial?</Label>
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={adicionarDespesa} className="flex-1">
-                      {editandoItem ? "Atualizar" : "Adicionar"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        resetFormularioDespesa()
-                        setModalDespesaAberto(false)
-                      }}
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {activeTab === "receitas" && (
-            <Dialog open={modalReceitaAberto} onOpenChange={setModalReceitaAberto}>
-              <DialogTrigger asChild>
-                <Button
-                  className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all bg-green-600 hover:bg-green-700"
-                  onClick={resetFormularioReceita}
-                >
-                  <Plus className="w-6 h-6" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editandoItem ? "Editar Receita" : "Nova Receita"}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label>Nome da Receita</Label>
-                    <Input
-                      value={novaReceita.nome}
-                      onChange={(e) => setNovaReceita({ ...novaReceita, nome: e.target.value })}
-                      placeholder="Ex: Salário Janeiro"
-                    />
-                  </div>
-                  <div>
-                    <Label>Valor</Label>
-                    <Input
-                      type="number"
-                      value={novaReceita.valor}
-                      onChange={(e) => setNovaReceita({ ...novaReceita, valor: Number(e.target.value) })}
-                      placeholder="0,00"
-                    />
-                  </div>
-                  <div>
-                    <Label>Data de Entrada</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start bg-transparent">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {novaReceita.dataEntrada ? format(novaReceita.dataEntrada, "dd/MM/yyyy") : "Selecione"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={novaReceita.dataEntrada}
-                          onSelect={(date) => date && setNovaReceita({ ...novaReceita, dataEntrada: date })}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div>
-                    <Label>Categoria</Label>
-                    <Select
-                      value={novaReceita.categoria}
-                      onValueChange={(value) => setNovaReceita({ ...novaReceita, categoria: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoriasReceitas.map((categoria) => (
-                          <SelectItem key={categoria} value={categoria}>
-                            {categoria}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Centro de Custo</Label>
-                    <Select
-                      value={novaReceita.centroCusto}
-                      onValueChange={(value) => setNovaReceita({ ...novaReceita, centroCusto: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {todosCentrosCusto.map((centro) => (
-                          <SelectItem key={centro} value={centro}>
-                            {centro}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={adicionarReceita} className="flex-1">
-                      {editandoItem ? "Atualizar" : "Adicionar"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        resetFormularioReceita()
-                        setModalReceitaAberto(false)
-                      }}
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {activeTab === "cartoes" && (
-            <Dialog open={modalCartaoAberto} onOpenChange={setModalCartaoAberto}>
-              <DialogTrigger asChild>
-                <Button
-                  className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all bg-purple-600 hover:bg-purple-700"
-                  onClick={resetFormularioCartao}
-                >
-                  <Plus className="w-6 h-6" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{editandoItem ? "Editar Cartão" : "Novo Cartão"}</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label>Nome do Cartão</Label>
-                    <Input
-                      value={novoCartao.nome}
-                      onChange={(e) => setNovoCartao({ ...novoCartao, nome: e.target.value })}
-                      placeholder="Ex: Nubank"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Dia Fechamento</Label>
-                      <Input
-                        type="number"
-                        value={novoCartao.diaFechamento}
-                        onChange={(e) => setNovoCartao({ ...novoCartao, diaFechamento: Number(e.target.value) })}
-                        min="1"
-                        max="31"
-                      />
-                    </div>
-                    <div>
-                      <Label>Dia Pagamento</Label>
-                      <Input
-                        type="number"
-                        value={novoCartao.diaPagamento}
-                        onChange={(e) => setNovoCartao({ ...novoCartao, diaPagamento: Number(e.target.value) })}
-                        min="1"
-                        max="31"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Limite Mensal</Label>
-                    <Input
-                      type="number"
-                      value={novoCartao.limite}
-                      onChange={(e) => setNovoCartao({ ...novoCartao, limite: Number(e.target.value) })}
-                      placeholder="0,00"
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={adicionarCartao} className="flex-1">
-                      {editandoItem ? "Atualizar" : "Adicionar"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        resetFormularioCartao()
-                        setModalCartaoAberto(false)
-                      }}
-                      className="flex-1"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-
-        {/* Modal Centro de Custo */}
-        <Dialog open={modalCentroCustoAberto} onOpenChange={setModalCentroCustoAberto}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Novo Centro de Custo</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Nome do Centro de Custo</Label>
-                <Input
-                  value={novoCentroCusto}
-                  onChange={(e) => setNovoCentroCusto(e.target.value)}
-                  placeholder="Ex: _7.1 Nova Categoria"
-                />
-              </div>
-              <div className="flex gap-2 pt-4">
-                <Button onClick={adicionarCentroCusto} className="flex-1">
-                  Criar
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setNovoCentroCusto("")
-                    setModalCentroCustoAberto(false)
-                  }}
-                  className="flex-1"
-                >
-                  Cancelar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   )

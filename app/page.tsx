@@ -1,83 +1,75 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useUser } from "@/lib/contexts/UserContext"
-import { isSupabaseConfigured } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Loader2 } from "lucide-react"
-import FinancialControl from "@/financial-control"
 
-export default function HomePage() {
-  const { user, loading } = useUser()
+import { useEffect, useState } from "react"
+import { redirect } from "next/navigation"
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+import { cookies } from "next/headers"
+import FinancialDashboard from "@/components/financial-dashboard"
+import { UserProvider } from "@/lib/contexts/UserContext"
+
+export default async function Home() {
+  const supabase = createServerComponentClient({ cookies })
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session) {
+    redirect("/login")
+  }
+
+  const [user, setUser] = useState(session?.user ?? null)
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && !loading) {
-      if (!isSupabaseConfigured()) {
-        router.push("/setup")
-        return
-      }
+    const getUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
       if (!user) {
         router.push("/login")
         return
       }
+
+      setUser(user)
+      setLoading(false)
     }
-  }, [mounted, loading, user, router])
 
-  if (!mounted || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-              <p>Carregando...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+    getUser()
 
-  if (!isSupabaseConfigured()) {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" || !session) {
+        router.push("/login")
+      } else if (session?.user) {
+        setUser(session.user)
+        setLoading(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [router, supabase.auth])
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <h2 className="text-xl font-semibold mb-4">Configuração Necessária</h2>
-              <p className="text-gray-600 mb-4">Configure o Supabase para usar o sistema</p>
-              <Button onClick={() => router.push("/setup")}>Ir para Configuração</Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     )
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <h2 className="text-xl font-semibold mb-4">Acesso Necessário</h2>
-              <p className="text-gray-600 mb-4">Faça login para acessar o sistema</p>
-              <Button onClick={() => router.push("/login")}>Fazer Login</Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return null
   }
 
-  return <FinancialControl />
+  return (
+    <UserProvider user={user}>
+      <FinancialDashboard />
+    </UserProvider>
+  )
 }

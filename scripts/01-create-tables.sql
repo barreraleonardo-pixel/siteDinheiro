@@ -1,105 +1,77 @@
 -- Enable RLS
 ALTER DATABASE postgres SET "app.jwt_secret" TO 'your-jwt-secret';
 
--- Create profiles table
-CREATE TABLE IF NOT EXISTS profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  full_name TEXT,
-  avatar_url TEXT,
-  role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Create tables
+CREATE TABLE IF NOT EXISTS public.transacoes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    tipo VARCHAR(10) NOT NULL CHECK (tipo IN ('receita', 'despesa')),
+    valor DECIMAL(10,2) NOT NULL,
+    categoria VARCHAR(50) NOT NULL,
+    descricao TEXT NOT NULL,
+    data DATE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Create transactions table
-CREATE TABLE IF NOT EXISTS transactions (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  description TEXT NOT NULL,
-  amount DECIMAL(10,2) NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-  category TEXT NOT NULL,
-  date DATE NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS public.metas (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    titulo VARCHAR(100) NOT NULL,
+    valor_alvo DECIMAL(10,2) NOT NULL,
+    valor_atual DECIMAL(10,2) DEFAULT 0,
+    data_limite DATE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Create categories table (optional, for custom categories)
-CREATE TABLE IF NOT EXISTS categories (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-  color TEXT DEFAULT '#3B82F6',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS public.orcamentos (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    categoria VARCHAR(50) NOT NULL,
+    limite DECIMAL(10,2) NOT NULL,
+    gasto_atual DECIMAL(10,2) DEFAULT 0,
+    mes_ano VARCHAR(7) NOT NULL, -- formato YYYY-MM
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE(user_id, categoria, mes_ano)
 );
 
 -- Enable Row Level Security
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.metas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orcamentos ENABLE ROW LEVEL SECURITY;
 
--- Create policies for profiles
-CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
+-- Create policies
+CREATE POLICY "Users can view own transacoes" ON public.transacoes
+    FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own profile" ON profiles
-  FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can insert own transacoes" ON public.transacoes
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Admins can view all profiles" ON profiles
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Users can update own transacoes" ON public.transacoes
+    FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can update all profiles" ON profiles
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Users can delete own transacoes" ON public.transacoes
+    FOR DELETE USING (auth.uid() = user_id);
 
-CREATE POLICY "Admins can delete profiles" ON profiles
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id = auth.uid() AND role = 'admin'
-    )
-  );
+CREATE POLICY "Users can view own metas" ON public.metas
+    FOR SELECT USING (auth.uid() = user_id);
 
--- Create policies for transactions
-CREATE POLICY "Users can view own transactions" ON transactions
-  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own metas" ON public.metas
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own transactions" ON transactions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own metas" ON public.metas
+    FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own transactions" ON transactions
-  FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own metas" ON public.metas
+    FOR DELETE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can delete own transactions" ON transactions
-  FOR DELETE USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own orcamentos" ON public.orcamentos
+    FOR SELECT USING (auth.uid() = user_id);
 
--- Create policies for categories
-CREATE POLICY "Users can view own categories" ON categories
-  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own orcamentos" ON public.orcamentos
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can insert own categories" ON categories
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own orcamentos" ON public.orcamentos
+    FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can update own categories" ON categories
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own categories" ON categories
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
-CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
-CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
+CREATE POLICY "Users can delete own orcamentos" ON public.orcamentos
+    FOR DELETE USING (auth.uid() = user_id);

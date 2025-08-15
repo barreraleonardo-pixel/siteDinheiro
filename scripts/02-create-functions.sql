@@ -21,17 +21,11 @@ CREATE POLICY "Users can update own transactions" ON transactions
 CREATE POLICY "Users can delete own transactions" ON transactions
   FOR DELETE USING (auth.uid() = user_id);
 
--- Função para criar perfil automaticamente
+-- Function to create perfil automaticamente
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, avatar_url)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
-    COALESCE(NEW.raw_user_meta_data->>'avatar_url', '')
-  );
+  NEW.user_id = auth.uid();
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -42,8 +36,21 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Triggers to automatically set user_id
+CREATE TRIGGER on_auth_user_created_transacoes
+  BEFORE INSERT ON public.transacoes
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+CREATE TRIGGER on_auth_user_created_metas
+  BEFORE INSERT ON public.metas
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+CREATE TRIGGER on_auth_user_created_orcamentos
+  BEFORE INSERT ON public.orcamentos
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
 -- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -54,11 +61,23 @@ $$ LANGUAGE plpgsql;
 -- Triggers to update updated_at
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 CREATE TRIGGER update_transactions_updated_at
   BEFORE UPDATE ON public.transactions
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.transactions
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.goals
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.budgets
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- Function to get monthly statistics
 CREATE OR REPLACE FUNCTION public.get_monthly_stats(user_uuid UUID, target_year INTEGER, target_month INTEGER)
@@ -119,3 +138,35 @@ BEGIN
   ORDER BY amount DESC;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to update budget spending
+CREATE OR REPLACE FUNCTION public.update_budget_spending()
+RETURNS TRIGGER AS $$
+DECLARE
+  budget_month VARCHAR(7);
+BEGIN
+  -- Get the month in YYYY-MM format
+  budget_month := to_char(NEW.data, 'YYYY-MM');
+  
+  -- Update the budget for this category and month
+  UPDATE public.orcamentos 
+  SET gasto_atual = (
+    SELECT COALESCE(SUM(valor), 0)
+    FROM public.transacoes 
+    WHERE user_id = NEW.user_id 
+      AND categoria = NEW.categoria 
+      AND tipo = 'despesa'
+      AND to_char(data, 'YYYY-MM') = budget_month
+  )
+  WHERE user_id = NEW.user_id 
+    AND categoria = NEW.categoria 
+    AND mes_ano = budget_month;
+    
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to update budget spending when transactions change
+CREATE TRIGGER on_transaction_budget_update
+  AFTER INSERT OR UPDATE OR DELETE ON public.transacoes
+  FOR EACH ROW EXECUTE PROCEDURE public.update_budget_spending();

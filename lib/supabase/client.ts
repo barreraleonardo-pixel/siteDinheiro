@@ -1,36 +1,32 @@
 import { createBrowserClient } from "@supabase/ssr"
-import { createClient } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+let supabaseInstance: SupabaseClient | null = null
 
 export function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  return !!(url && key)
+  return !!(url && key && url.trim() !== "" && key.trim() !== "")
 }
 
-export function createSupabaseBrowser() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("⚠️ Supabase configuration missing")
+export function createSupabaseBrowser(): SupabaseClient | null {
+  if (!isSupabaseConfigured()) {
+    console.warn("⚠️ Supabase not configured")
     return null
   }
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
-}
-
-export function createSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("⚠️ Supabase configuration missing")
-    return null
+  if (!supabaseInstance) {
+    supabaseInstance = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey)
+  return supabaseInstance
 }
 
-// Default export for backward compatibility
-const supabase = createSupabaseClient()
-export default supabase
+// Named export for compatibility
+export const supabase = createSupabaseBrowser()
+
+// Default export
+export default createSupabaseBrowser()

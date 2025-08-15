@@ -3,25 +3,26 @@
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import type { User } from "@supabase/supabase-js"
 import { createSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client"
+import type { User } from "@supabase/supabase-js"
 
 interface UserContextType {
   user: User | null
   loading: boolean
-  isConfigured: boolean
-  signOut: () => Promise<void>
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined)
+const UserContext = createContext<UserContextType>({
+  user: null,
+  loading: true,
+})
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [isConfigured] = useState(() => isSupabaseConfigured())
 
   useEffect(() => {
-    if (!isConfigured) {
+    if (!isSupabaseConfigured()) {
+      console.log("⚠️ Supabase not configured in UserContext")
       setLoading(false)
       return
     }
@@ -33,36 +34,32 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.log("⚠️ Error getting session:", error.message)
+      } else {
+        setUser(session?.user ?? null)
+        console.log("ℹ️ Initial session:", session?.user ? "authenticated" : "not authenticated")
+      }
       setLoading(false)
     })
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("🔄 Auth state changed:", event)
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("🔄 Auth state changed:", event, session?.user ? "authenticated" : "not authenticated")
       setUser(session?.user ?? null)
       setLoading(false)
     })
 
     return () => subscription.unsubscribe()
-  }, [isConfigured])
+  }, [])
 
-  const signOut = async () => {
-    if (!isConfigured) return
-
-    const supabase = createSupabaseBrowser()
-    if (!supabase) return
-
-    await supabase.auth.signOut()
-  }
-
-  return <UserContext.Provider value={{ user, loading, isConfigured, signOut }}>{children}</UserContext.Provider>
+  return <UserContext.Provider value={{ user, loading }}>{children}</UserContext.Provider>
 }
 
-export function useUser() {
+export const useUser = () => {
   const context = useContext(UserContext)
   if (context === undefined) {
     throw new Error("useUser must be used within a UserProvider")

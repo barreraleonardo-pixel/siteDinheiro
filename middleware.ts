@@ -1,8 +1,9 @@
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
-import { NextResponse, type NextRequest } from "next/server"
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({
+  let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -23,30 +24,58 @@ export async function middleware(request: NextRequest) {
   try {
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
+        get(name: string) {
+          return request.cookies.get(name)?.value
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value)
-            response.cookies.set(name, value, options)
+        set(name: string, value: string, options: any) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+        },
+        remove(name: string, options: any) {
+          request.cookies.set({
+            name,
+            value: "",
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value: "",
+            ...options,
           })
         },
       },
     })
 
-    // Get session (this won't throw an error if no session exists)
     const {
       data: { session },
     } = await supabase.auth.getSession()
 
-    if (session) {
-      console.log("ℹ️ User authenticated:", session.user.email)
-    } else {
-      console.log("ℹ️ No active session found")
+    // Allow access to setup page regardless of auth status
+    if (request.nextUrl.pathname === "/setup") {
+      return response
     }
+
+    console.log("ℹ️ Session status:", session ? "authenticated" : "not authenticated")
   } catch (error) {
-    console.log("⚠️ Middleware auth check failed:", error)
+    console.log("⚠️ Middleware error (non-critical):", error)
   }
 
   return response

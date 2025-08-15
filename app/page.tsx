@@ -22,7 +22,7 @@ export default function HomePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Configuração Necessária</h1>
+          <h1 className="text-2xl font-bold mb-4">Sistema não configurado</h1>
           <p className="text-gray-600">Redirecionando para configuração...</p>
         </div>
       </div>
@@ -43,13 +43,7 @@ export default function HomePage() {
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="container mx-auto px-4 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Sistema Financeiro Pessoal</h1>
-            <p className="text-gray-600">Gerencie suas finanças de forma simples e eficiente</p>
-          </div>
-          <LoginForm />
-        </div>
+        <LoginForm />
       </div>
     )
   }

@@ -1,5 +1,7 @@
 "use client"
 
+import { CardDescription } from "@/components/ui/card"
+
 import { useState, useMemo } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -310,7 +312,67 @@ const categoriasPlanoIniciais: CategoriaPlano[] = [
   },
 ]
 
+interface Transaction {
+  id: string
+  type: "receita" | "despesa"
+  category: string
+  description: string
+  amount: number
+  date: string
+}
+
 export default function FinancialControl() {
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [newTransaction, setNewTransaction] = useState({
+    type: "receita" as "receita" | "despesa",
+    category: "",
+    description: "",
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+  })
+
+  const categories = {
+    receita: ["Salário", "Freelance", "Investimentos", "Outros"],
+    despesa: ["Alimentação", "Transporte", "Moradia", "Saúde", "Lazer", "Outros"],
+  }
+
+  const addTransaction = () => {
+    if (!newTransaction.description || !newTransaction.amount || !newTransaction.category) {
+      alert("Por favor, preencha todos os campos")
+      return
+    }
+
+    const transaction: Transaction = {
+      id: Date.now().toString(),
+      type: newTransaction.type,
+      category: newTransaction.category,
+      description: newTransaction.description,
+      amount: Number.parseFloat(newTransaction.amount),
+      date: newTransaction.date,
+    }
+
+    setTransactions([...transactions, transaction])
+    setNewTransaction({
+      type: "receita",
+      category: "",
+      description: "",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+    })
+  }
+
+  const totalReceitas = transactions.filter((t) => t.type === "receita").reduce((sum, t) => sum + t.amount, 0)
+
+  const totalDespesas = transactions.filter((t) => t.type === "despesa").reduce((sum, t) => sum + t.amount, 0)
+
+  const saldo = totalReceitas - totalDespesas
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value)
+  }
   const [cartoes, setCartoes] = useState<Cartao[]>(cartoesIniciais)
   const [despesas, setDespesas] = useState<Despesa[]>(despesasIniciais)
   const [receitas, setReceitas] = useState<Receita[]>(receitasIniciais)
@@ -1319,6 +1381,7 @@ export default function FinancialControl() {
               <CreditCard className="w-4 h-4 mr-2" />
               Cartões
             </TabsTrigger>
+            <TabsTrigger value="transactions">Transações</TabsTrigger>
           </TabsList>
 
           {/* Aba Home - Dashboard Aprimorado */}
@@ -2641,6 +2704,65 @@ export default function FinancialControl() {
               })}
             </motion.div>
           </TabsContent>
+          <TabsContent value="transactions">
+            <Card>
+              <CardHeader>
+                <CardTitle>Transações</CardTitle>
+                <CardDescription>Lista de todas as suas transações</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {transactions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">Nenhuma transação encontrada</p>
+                    <p className="text-sm text-gray-400">Adicione sua primeira transação para começar</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {transactions
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map((transaction) => (
+                        <div
+                          key={transaction.id}
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                        >
+                          <div className="flex items-center space-x-4">
+                            <div
+                              className={`p-2 rounded-full ${
+                                transaction.type === "receita" ? "bg-green-100" : "bg-red-100"
+                              }`}
+                            >
+                              {transaction.type === "receita" ? (
+                                <TrendingUp className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <TrendingDown className="h-4 w-4 text-red-600" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium">{transaction.description}</p>
+                              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                                <Badge variant="outline">{transaction.category}</Badge>
+                                <span className="flex items-center">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  {new Date(transaction.date).toLocaleDateString("pt-BR")}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            className={`text-lg font-semibold ${
+                              transaction.type === "receita" ? "text-green-600" : "text-red-600"
+                            }`}
+                          >
+                            {transaction.type === "receita" ? "+" : "-"}
+                            {formatCurrency(transaction.amount)}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Botões Flutuantes */}
@@ -2824,7 +2946,7 @@ export default function FinancialControl() {
                     <Label>Categoria</Label>
                     <Select
                       value={novaDespesa.categoria}
-                      onValueChange={(value) => setNovaDespesa({ ...novaDespesa, categoria: value })}
+                      onChange={(e) => setNovaDespesa({ ...novaDespesa, categoria: e.target.value })}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione" />

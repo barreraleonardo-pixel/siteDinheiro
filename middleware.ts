@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+import { NextResponse, type NextRequest } from "next/server"
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -68,14 +67,9 @@ export async function middleware(request: NextRequest) {
       data: { session },
     } = await supabase.auth.getSession()
 
-    // Allow access to setup page regardless of auth status
-    if (request.nextUrl.pathname === "/setup") {
-      return response
-    }
-
-    console.log("ℹ️ Session status:", session ? "authenticated" : "not authenticated")
+    console.log("ℹ️ Session check:", session ? "User logged in" : "No session")
   } catch (error) {
-    console.log("⚠️ Middleware error (non-critical):", error)
+    console.log("⚠️ Middleware error:", error)
   }
 
   return response

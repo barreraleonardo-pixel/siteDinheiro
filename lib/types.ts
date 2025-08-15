@@ -1,64 +1,51 @@
-export interface User {
+export interface Transaction {
   id: string
-  auth_user_id: string
-  nome: string
-  email: string
-  foto?: string
-  conta_principal_id?: string
-  permissao: "visualizacao" | "edicao"
-  ativo: boolean
+  user_id: string
+  type: "receita" | "despesa"
+  category: string
+  description: string
+  amount: number
+  date: string
   created_at: string
   updated_at: string
 }
 
-export interface HistoricoItem {
+export interface Category {
   id: string
-  usuario_id: string
-  acao: string
-  dados_anteriores?: any
-  dados_novos?: any
-  tabela_afetada?: string
-  registro_id?: string
-  data_hora: string
+  user_id: string
+  name: string
+  type: "receita" | "despesa"
+  color: string
+  created_at: string
 }
 
-export interface CartaoDb {
+export interface Budget {
   id: string
-  usuario_id: string
-  nome: string
-  dia_fechamento: number
-  dia_pagamento: number
-  limite: number
+  user_id: string
+  category_id: string
+  amount: number
+  period: "monthly" | "yearly"
+  year: number
+  month?: number
   created_at: string
   updated_at: string
 }
 
-export interface DespesaDb {
+export interface Profile {
   id: string
-  usuario_id: string
-  nome: string
-  valor_total: number
-  centro_custo?: string
-  categoria?: string
-  data_compra: string
-  parcelas: number
-  cartao_id?: string
-  observacoes?: string
-  essencial: boolean
-  created_at: string
   updated_at: string
+  username: string
+  full_name: string
+  avatar_url: string
+  website: string
 }
 
-export interface ReceitaDb {
-  id: string
-  usuario_id: string
-  nome: string
-  valor: number
-  data_entrada: string
-  centro_custo?: string
-  categoria?: string
-  recebido: boolean
-  data_recebimento?: string
-  created_at: string
-  updated_at: string
+export interface UserStats {
+  total_income: number
+  total_expenses: number
+  current_month_income: number
+  current_month_expenses: number
+  balance: number
+  current_month_balance: number
+  transaction_count: number
 }

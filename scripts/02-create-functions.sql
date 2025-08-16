@@ -1,172 +1,61 @@
--- Políticas de segurança para user_profiles
-CREATE POLICY "Users can view own profile" ON user_profiles
-  FOR SELECT USING (auth.uid() = id);
-
-CREATE POLICY "Users can update own profile" ON user_profiles
-  FOR UPDATE USING (auth.uid() = id);
-
-CREATE POLICY "Users can insert own profile" ON user_profiles
-  FOR INSERT WITH CHECK (auth.uid() = id);
-
--- Políticas de segurança para transactions
-CREATE POLICY "Users can view own transactions" ON transactions
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own transactions" ON transactions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own transactions" ON transactions
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own transactions" ON transactions
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Function to create perfil automaticamente
-CREATE OR REPLACE FUNCTION public.handle_new_user()
+-- Function to update budget spent amount
+CREATE OR REPLACE FUNCTION update_budget_spent()
 RETURNS TRIGGER AS $$
 BEGIN
-  NEW.user_id = auth.uid();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger para criar perfil quando usuário se registra
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- Triggers to automatically set user_id
-CREATE TRIGGER on_auth_user_created_transacoes
-  BEFORE INSERT ON public.transacoes
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
-CREATE TRIGGER on_auth_user_created_metas
-  BEFORE INSERT ON public.metas
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
-CREATE TRIGGER on_auth_user_created_orcamentos
-  BEFORE INSERT ON public.orcamentos
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
-
--- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION public.handle_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
+  -- Update spent amount for the category and month
+  UPDATE budgets 
+  SET spent = (
+    SELECT COALESCE(SUM(amount), 0)
+    FROM transactions 
+    WHERE user_id = NEW.user_id 
+      AND category = NEW.category 
+      AND type = 'expense'
+      AND TO_CHAR(date, 'YYYY-MM') = TO_CHAR(NEW.date, 'YYYY-MM')
+  )
+  WHERE user_id = NEW.user_id 
+    AND category = NEW.category 
+    AND month = TO_CHAR(NEW.date, 'YYYY-MM');
+    
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Triggers to update updated_at
-CREATE TRIGGER update_profiles_updated_at
-  BEFORE UPDATE ON public.profiles
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+-- Create trigger for budget updates
+DROP TRIGGER IF EXISTS trigger_update_budget_spent ON transactions;
+CREATE TRIGGER trigger_update_budget_spent
+  AFTER INSERT OR UPDATE OR DELETE ON transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_budget_spent();
 
-CREATE TRIGGER update_transactions_updated_at
-  BEFORE UPDATE ON public.transactions
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.transactions
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.goals
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.budgets
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
--- Function to get monthly statistics
-CREATE OR REPLACE FUNCTION public.get_monthly_stats(user_uuid UUID, target_year INTEGER, target_month INTEGER)
-RETURNS TABLE (
-  total_income DECIMAL,
-  total_expenses DECIMAL,
-  balance DECIMAL,
-  transaction_count BIGINT
-) AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as total_income,
-    COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as total_expenses,
-    COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as balance,
-    COUNT(*) as transaction_count
-  FROM public.transactions
-  WHERE user_id = user_uuid
-    AND EXTRACT(YEAR FROM date) = target_year
-    AND EXTRACT(MONTH FROM date) = target_month;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to get category statistics
-CREATE OR REPLACE FUNCTION public.get_category_stats(user_uuid UUID, start_date DATE DEFAULT NULL, end_date DATE DEFAULT NULL)
-RETURNS TABLE (
-  category TEXT,
-  amount DECIMAL,
-  transaction_count BIGINT,
-  percentage DECIMAL
-) AS $$
-DECLARE
-  total_expenses DECIMAL;
-BEGIN
-  -- Get total expenses for percentage calculation
-  SELECT COALESCE(SUM(amount), 0) INTO total_expenses
-  FROM public.transactions
-  WHERE user_id = user_uuid
-    AND type = 'expense'
-    AND (start_date IS NULL OR date >= start_date)
-    AND (end_date IS NULL OR date <= end_date);
-
-  RETURN QUERY
-  SELECT 
-    t.category,
-    SUM(t.amount) as amount,
-    COUNT(*) as transaction_count,
-    CASE 
-      WHEN total_expenses > 0 THEN (SUM(t.amount) / total_expenses * 100)
-      ELSE 0
-    END as percentage
-  FROM public.transactions t
-  WHERE t.user_id = user_uuid
-    AND t.type = 'expense'
-    AND (start_date IS NULL OR t.date >= start_date)
-    AND (end_date IS NULL OR t.date <= end_date)
-  GROUP BY t.category
-  ORDER BY amount DESC;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Function to update budget spending
-CREATE OR REPLACE FUNCTION public.update_budget_spending()
+-- Function to update goal progress
+CREATE OR REPLACE FUNCTION update_goal_progress()
 RETURNS TRIGGER AS $$
-DECLARE
-  budget_month VARCHAR(7);
 BEGIN
-  -- Get the month in YYYY-MM format
-  budget_month := to_char(NEW.data, 'YYYY-MM');
-  
-  -- Update the budget for this category and month
-  UPDATE public.orcamentos 
-  SET gasto_atual = (
-    SELECT COALESCE(SUM(valor), 0)
-    FROM public.transacoes 
+  -- Update current amount for goals based on income transactions
+  UPDATE goals 
+  SET current_amount = (
+    SELECT COALESCE(SUM(amount), 0)
+    FROM transactions 
     WHERE user_id = NEW.user_id 
-      AND categoria = NEW.categoria 
-      AND tipo = 'despesa'
-      AND to_char(data, 'YYYY-MM') = budget_month
-  )
-  WHERE user_id = NEW.user_id 
-    AND categoria = NEW.categoria 
-    AND mes_ano = budget_month;
+      AND type = 'income'
+      AND description ILIKE '%' || goals.title || '%'
+  ),
+  completed = (
+    SELECT COALESCE(SUM(amount), 0)
+    FROM transactions 
+    WHERE user_id = NEW.user_id 
+      AND type = 'income'
+      AND description ILIKE '%' || goals.title || '%'
+  ) >= target_amount
+  WHERE user_id = NEW.user_id;
     
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql;
 
--- Trigger to update budget spending when transactions change
-CREATE TRIGGER on_transaction_budget_update
-  AFTER INSERT OR UPDATE OR DELETE ON public.transacoes
-  FOR EACH ROW EXECUTE PROCEDURE public.update_budget_spending();
+-- Create trigger for goal updates
+DROP TRIGGER IF EXISTS trigger_update_goal_progress ON transactions;
+CREATE TRIGGER trigger_update_goal_progress
+  AFTER INSERT OR UPDATE OR DELETE ON transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_goal_progress();

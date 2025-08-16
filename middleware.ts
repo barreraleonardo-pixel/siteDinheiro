@@ -10,12 +10,12 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // If user is not signed in and the current path is not /login redirect the user to /login
-  if (!session && req.nextUrl.pathname !== "/login") {
+  // Se não há sessão e está tentando acessar uma rota protegida
+  if (!session && req.nextUrl.pathname === "/") {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
-  // If user is signed in and the current path is /login redirect the user to /
+  // Se há sessão e está tentando acessar login
   if (session && req.nextUrl.pathname === "/login") {
     return NextResponse.redirect(new URL("/", req.url))
   }
@@ -24,5 +24,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/", "/login"],
 }

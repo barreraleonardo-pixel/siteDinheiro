@@ -1,28 +1,19 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-
 import { useEffect, useState } from "react"
-import { redirect } from "next/navigation"
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { useRouter } from "next/navigation"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import type { User } from "@supabase/supabase-js"
 import FinancialDashboard from "@/components/financial-dashboard"
 import { UserProvider } from "@/lib/contexts/UserContext"
+import { Card, CardContent } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
 
-export default async function Home() {
-  const supabase = createServerComponentClient({ cookies })
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  if (!session) {
-    redirect("/login")
-  }
-
-  const [user, setUser] = useState(session?.user ?? null)
-  const [loading, setLoading] = useState(false)
+export default function HomePage() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const supabase = createClientComponentClient()
 
   useEffect(() => {
     const getUser = async () => {
@@ -57,8 +48,15 @@ export default async function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+              <p>Carregando...</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -68,7 +66,7 @@ export default async function Home() {
   }
 
   return (
-    <UserProvider user={user}>
+    <UserProvider>
       <FinancialDashboard />
     </UserProvider>
   )

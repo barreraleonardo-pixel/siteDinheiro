@@ -1,351 +1,235 @@
-"use client"
+'use client'
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle, XCircle, ExternalLink, Copy, Database, Zap } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { CheckCircle, Copy, ExternalLink, AlertCircle } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 
 export default function SetupPage() {
-  const [supabaseUrl, setSupabaseUrl] = useState("")
-  const [supabaseKey, setSupabaseKey] = useState("")
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<"success" | "error" | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
-  const router = useRouter()
+  const [supabaseUrl, setSupabaseUrl] = useState('')
+  const [supabaseKey, setSupabaseKey] = useState('')
+  const [showEnvContent, setShowEnvContent] = useState(false)
+  const { toast } = useToast()
 
-  const copyToClipboard = (text: string, type: string) => {
+  const envContent = supabaseUrl && supabaseKey ? 
+    `NEXT_PUBLIC_SUPABASE_URL=${supabaseUrl}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${supabaseKey}` :
+    `NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here\nNEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here`
+
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
-    setCopied(type)
-    setTimeout(() => setCopied(null), 2000)
+    toast({
+      title: "Copiado!",
+      description: "Conteúdo copiado para a área de transferência",
+    })
   }
-
-  const testConnection = async () => {
-    if (!supabaseUrl || !supabaseKey) {
-      setTestResult("error")
-      return
-    }
-
-    setTesting(true)
-    try {
-      // Simular teste de conexão
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      // Verificar formato básico da URL
-      if (supabaseUrl.includes(".supabase.co") && supabaseKey.length > 50) {
-        setTestResult("success")
-      } else {
-        setTestResult("error")
-      }
-    } catch (error) {
-      setTestResult("error")
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const envTemplate = `NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anonima`
-
-  const envWithValues =
-    supabaseUrl && supabaseKey
-      ? `NEXT_PUBLIC_SUPABASE_URL=${supabaseUrl}
-NEXT_PUBLIC_SUPABASE_ANON_KEY=${supabaseKey}`
-      : envTemplate
-
-  const sqlScript1 = `-- Criar tabelas principais
-CREATE TABLE IF NOT EXISTS transactions (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  description TEXT NOT NULL,
-  amount DECIMAL(10,2) NOT NULL,
-  type TEXT CHECK (type IN ('income', 'expense')) NOT NULL,
-  category TEXT NOT NULL,
-  date DATE NOT NULL DEFAULT CURRENT_DATE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS budgets (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  category TEXT NOT NULL,
-  limit_amount DECIMAL(10,2) NOT NULL,
-  month INTEGER NOT NULL,
-  year INTEGER NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, category, month, year)
-);
-
-CREATE TABLE IF NOT EXISTS goals (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  target_amount DECIMAL(10,2) NOT NULL,
-  current_amount DECIMAL(10,2) DEFAULT 0,
-  target_date DATE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);`
-
-  const sqlScript2 = `-- Habilitar RLS (Row Level Security)
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
-
--- Políticas de segurança
-CREATE POLICY "Users can view own transactions" ON transactions
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own transactions" ON transactions
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own transactions" ON transactions
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own transactions" ON transactions
-  FOR DELETE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can view own budgets" ON budgets
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own budgets" ON budgets
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own budgets" ON budgets
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own budgets" ON budgets
-  FOR DELETE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can view own goals" ON goals
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own goals" ON goals
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own goals" ON goals
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own goals" ON goals
-  FOR DELETE USING (auth.uid() = user_id);`
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Configuração do Supabase</h1>
-          <p className="mt-2 text-gray-600">Configure sua base de dados para persistir seus dados financeiros</p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="text-center space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900">Configuração do Sistema Financeiro</h1>
+          <p className="text-gray-600">Configure sua integração com Supabase para persistência de dados</p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Status Atual */}
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Modo Demo Ativo:</strong> O sistema já funciona perfeitamente sem configuração! 
+            Os dados são salvos localmente no seu navegador. A configuração do Supabase é opcional para sincronização na nuvem.
+          </AlertDescription>
+        </Alert>
+
+        <div className="grid md:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5" />
-                Status Atual
+                <span className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                Criar Projeto Supabase
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span>Modo Demo</span>
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                    Ativo
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Supabase</span>
-                  <Badge variant="outline" className="text-gray-600">
-                    Não Configurado
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Persistência</span>
-                  <XCircle className="h-5 w-5 text-red-500" />
-                </div>
-              </div>
-
-              <Alert className="mt-4 border-blue-200 bg-blue-50">
-                <AlertDescription className="text-blue-800">
-                  Seus dados são temporários e serão perdidos ao recarregar a página.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-
-          {/* Configuração */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5" />
-                Configurar Supabase
-              </CardTitle>
-              <CardDescription>Conecte seu projeto Supabase para salvar dados permanentemente</CardDescription>
+              <CardDescription>
+                Crie uma conta gratuita no Supabase e configure seu projeto
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="url">URL do Projeto</Label>
+                <p className="text-sm text-gray-600">1. Acesse o Supabase e crie uma conta</p>
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => window.open('https://supabase.com', '_blank')}
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Abrir Supabase
+                </Button>
+              </div>
+              
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600">2. Crie um novo projeto</p>
+                <p className="text-sm text-gray-600">3. Anote a URL e a chave anônima do projeto</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                Configurar Variáveis
+              </CardTitle>
+              <CardDescription>
+                Insira suas credenciais do Supabase
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="supabase-url">URL do Supabase</Label>
                 <Input
-                  id="url"
+                  id="supabase-url"
                   placeholder="https://seu-projeto.supabase.co"
                   value={supabaseUrl}
                   onChange={(e) => setSupabaseUrl(e.target.value)}
                 />
               </div>
-
+              
               <div className="space-y-2">
-                <Label htmlFor="key">Chave Anônima</Label>
+                <Label htmlFor="supabase-key">Chave Anônima</Label>
                 <Input
-                  id="key"
+                  id="supabase-key"
                   placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   value={supabaseKey}
                   onChange={(e) => setSupabaseKey(e.target.value)}
-                  type="password"
                 />
               </div>
 
-              <Button onClick={testConnection} disabled={testing || !supabaseUrl || !supabaseKey} className="w-full">
-                {testing ? "Testando..." : "Testar Conexão"}
+              <Button 
+                onClick={() => setShowEnvContent(true)}
+                className="w-full"
+                disabled={!supabaseUrl || !supabaseKey}
+              >
+                Gerar Configuração
               </Button>
-
-              {testResult === "success" && (
-                <Alert className="border-green-200 bg-green-50">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
-                    Conexão bem-sucedida! Configure as variáveis de ambiente.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {testResult === "error" && (
-                <Alert className="border-red-200 bg-red-50">
-                  <XCircle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800">
-                    Erro na conexão. Verifique as credenciais.
-                  </AlertDescription>
-                </Alert>
-              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Instruções */}
-        <div className="mt-8 space-y-6">
-          {/* Passo 1 */}
+        {showEnvContent && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  1
-                </span>
-                Criar Projeto Supabase
+                <span className="bg-green-100 text-green-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                Arquivo .env.local
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600 mb-4">
-                Acesse o Supabase e crie um novo projeto para obter suas credenciais.
-              </p>
-              <Button variant="outline" asChild>
-                <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Abrir Supabase Dashboard
-                </a>
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Passo 2 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  2
-                </span>
-                Configurar Variáveis de Ambiente
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600 mb-4">Adicione estas variáveis ao seu arquivo .env.local:</p>
-              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm relative">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute top-2 right-2 text-gray-400 hover:text-white"
-                  onClick={() => copyToClipboard(envWithValues, "env")}
-                >
-                  {copied === "env" ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </Button>
-                <pre className="whitespace-pre-wrap">{envWithValues}</pre>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Passo 3 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  3
-                </span>
-                Executar Scripts SQL
-              </CardTitle>
+              <CardDescription>
+                Copie este conteúdo para seu arquivo .env.local
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-gray-600">Execute estes scripts no SQL Editor do Supabase para criar as tabelas:</p>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium">Script 1: Criar Tabelas</h4>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard(sqlScript1, "sql1")}>
-                    {copied === "sql1" ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">
-                  <pre>{sqlScript1}</pre>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium">Script 2: Configurar Segurança</h4>
-                  <Button variant="outline" size="sm" onClick={() => copyToClipboard(sqlScript2, "sql2")}>
-                    {copied === "sql2" ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">
-                  <pre>{sqlScript2}</pre>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Passo 4 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                  4
-                </span>
-                Finalizar
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600 mb-4">
-                Após configurar tudo, reinicie a aplicação para ativar a persistência de dados.
-              </p>
-              <div className="flex gap-3">
-                <Button onClick={() => router.push("/")}>Voltar ao Dashboard</Button>
-                <Button variant="outline" onClick={() => window.location.reload()}>
-                  Recarregar Aplicação
+              <div className="bg-gray-100 p-4 rounded-lg font-mono text-sm relative">
+                <pre className="whitespace-pre-wrap">{envContent}</pre>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="absolute top-2 right-2"
+                  onClick={() => copyToClipboard(envContent)}
+                >
+                  <Copy className="w-4 h-4" />
                 </Button>
               </div>
+              
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Crie um arquivo <code>.env.local</code> na raiz do projeto e cole este conteúdo.
+                  Reinicie o servidor de desenvolvimento após salvar.
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
-        </div>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span className="bg-purple-100 text-purple-600 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+              Executar Scripts SQL
+            </CardTitle>
+            <CardDescription>
+              Configure as tabelas no seu banco Supabase
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Execute os scripts SQL na pasta <code>/scripts</code> no editor SQL do Supabase:
+            </p>
+            
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="font-mono text-sm">01-create-tables.sql</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => copyToClipboard('-- Execute este script no editor SQL do Supabase')}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <span className="font-mono text-sm">02-create-functions.sql</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => copyToClipboard('-- Execute este script após o primeiro')}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Execute os scripts na ordem correta. O primeiro cria as tabelas, o segundo cria as funções.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader>
+            <CardTitle className="text-green-800 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5" />
+              Sistema Pronto!
+            </CardTitle>
+            <CardDescription className="text-green-700">
+              Seu sistema financeiro está configurado e funcionando
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <p className="text-sm text-green-700">
+                ✅ Interface responsiva e moderna<br/>
+                ✅ Gestão completa de transações<br/>
+                ✅ Controle de orçamentos por categoria<br/>
+                ✅ Metas financeiras com progresso<br/>
+                ✅ Relatórios detalhados e estatísticas<br/>
+                ✅ Persistência local (localStorage)<br/>
+                {supabaseUrl && supabaseKey && '✅ Sincronização na nuvem (Supabase)'}
+              </p>
+              
+              <Button 
+                className="w-full bg-green-600 hover:bg-green-700"
+                onClick={() => window.location.href = '/'}
+              >
+                Ir para o Dashboard
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 
 interface UserContextType {
@@ -18,7 +18,7 @@ const UserContext = createContext<UserContextType>({
 
 export const useUser = () => {
   const context = useContext(UserContext)
-  if (!context) {
+  if (context === undefined) {
     throw new Error("useUser must be used within a UserProvider")
   }
   return context
@@ -27,28 +27,31 @@ export const useUser = () => {
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
 
   useEffect(() => {
-    const getUser = async () => {
+    if (supabase) {
+      // Verificar usuário atual
+      supabase.auth.getUser().then(({ data }) => {
+        setUser(data.user)
+        setLoading(false)
+      })
+
+      // Escutar mudanças de autenticação
       const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setUser(user)
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null)
+        setLoading(false)
+      })
+
+      return () => subscription.unsubscribe()
+    } else {
+      // Modo demo sem Supabase
+      setUser(null)
       setLoading(false)
     }
-
-    getUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [supabase.auth])
+  }, [supabase])
 
   return <UserContext.Provider value={{ user, loading }}>{children}</UserContext.Provider>
 }

@@ -3,8 +3,8 @@
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
+import { createClient } from "@/lib/supabase/client"
 
 interface UserContextType {
   user: User | null
@@ -30,27 +30,37 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
 
   useEffect(() => {
-    if (supabase) {
-      // Verificar usuário atual
-      supabase.auth.getUser().then(({ data }) => {
-        setUser(data.user)
-        setLoading(false)
-      })
-
-      // Escutar mudanças de autenticação
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user ?? null)
-        setLoading(false)
-      })
-
-      return () => subscription.unsubscribe()
-    } else {
-      // Modo demo sem Supabase
-      setUser(null)
+    // Se Supabase não estiver configurado, definir como não carregando
+    if (!supabase) {
       setLoading(false)
+      return
     }
+
+    // Obter usuário inicial
+    const getUser = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        setUser(user)
+      } catch (error) {
+        console.error("Erro ao obter usuário:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    getUser()
+
+    // Escutar mudanças de autenticação
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
   }, [supabase])
 
   return <UserContext.Provider value={{ user, loading }}>{children}</UserContext.Provider>

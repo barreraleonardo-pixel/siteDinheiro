@@ -17,10 +17,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
   const router = useRouter()
   const supabase = createClient()
 
-  // Se não há Supabase configurado, redirecionar para o dashboard
+  // Se Supabase não estiver configurado, redirecionar para home (modo demo)
   if (!supabase) {
     router.push("/")
     return null
@@ -29,60 +30,79 @@ export default function LoginPage() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError("")
     setMessage("")
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (error) {
-      setMessage(error.message)
-    } else {
-      router.push("/")
+      if (error) {
+        setError(error.message)
+      } else {
+        router.push("/")
+      }
+    } catch (err) {
+      setError("Erro inesperado ao fazer login")
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError("")
     setMessage("")
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
 
-    if (error) {
-      setMessage(error.message)
-    } else {
-      setMessage("Verifique seu email para confirmar a conta!")
+      if (error) {
+        setError(error.message)
+      } else {
+        setMessage("Verifique seu email para confirmar a conta!")
+      }
+    } catch (err) {
+      setError("Erro inesperado ao criar conta")
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-center">Financeiro Pessoal</CardTitle>
-          <CardDescription className="text-center">Entre na sua conta ou crie uma nova</CardDescription>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold">Financeiro Pessoal</CardTitle>
+          <CardDescription>Gerencie suas finanças de forma inteligente</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Entrar</TabsTrigger>
-              <TabsTrigger value="signup">Cadastrar</TabsTrigger>
+              <TabsTrigger value="signup">Criar Conta</TabsTrigger>
             </TabsList>
 
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="seu@email.com"
+                  />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="password">Senha</Label>
                   <Input
                     id="password"
@@ -90,6 +110,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    placeholder="••••••••"
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
@@ -100,7 +121,7 @@ export default function LoginPage() {
 
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
                   <Input
                     id="signup-email"
@@ -108,9 +129,10 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    placeholder="seu@email.com"
                   />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="signup-password">Senha</Label>
                   <Input
                     id="signup-password"
@@ -118,21 +140,34 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    placeholder="••••••••"
                     minLength={6}
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Cadastrando..." : "Cadastrar"}
+                  {loading ? "Criando..." : "Criar Conta"}
                 </Button>
               </form>
             </TabsContent>
           </Tabs>
 
-          {message && (
-            <Alert className="mt-4">
-              <AlertDescription>{message}</AlertDescription>
+          {error && (
+            <Alert className="mt-4 border-red-200 bg-red-50">
+              <AlertDescription className="text-red-800">{error}</AlertDescription>
             </Alert>
           )}
+
+          {message && (
+            <Alert className="mt-4 border-green-200 bg-green-50">
+              <AlertDescription className="text-green-800">{message}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="mt-6 text-center">
+            <Button variant="outline" onClick={() => router.push("/")} className="text-sm">
+              Continuar em Modo Demo
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

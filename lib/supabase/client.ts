@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr"
 
+// Função para validar se uma URL é válida
 function isValidUrl(url: string): boolean {
   try {
     new URL(url)
@@ -11,22 +12,18 @@ function isValidUrl(url: string): boolean {
 
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("Supabase environment variables not found - running in demo mode")
-    return null
-  }
-
-  if (!isValidUrl(supabaseUrl)) {
-    console.warn("Invalid Supabase URL format - running in demo mode")
+  // Verificar se as variáveis existem e são válidas
+  if (!supabaseUrl || !supabaseKey || !isValidUrl(supabaseUrl)) {
+    console.log("🔧 Supabase não configurado - rodando em modo demo")
     return null
   }
 
   try {
-    return createBrowserClient(supabaseUrl, supabaseAnonKey)
+    return createBrowserClient(supabaseUrl, supabaseKey)
   } catch (error) {
-    console.warn("Failed to create Supabase client:", error)
+    console.error("Erro ao criar cliente Supabase:", error)
     return null
   }
 }

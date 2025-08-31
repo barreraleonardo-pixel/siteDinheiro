@@ -2,240 +2,172 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Switch } from "@/components/ui/switch"
-import { useToast } from "@/hooks/use-toast"
-import { Plus, CalendarIcon } from "lucide-react"
 import { format } from "date-fns"
-
-interface Cartao {
-  id: string
-  nome: string
-  diaFechamento: number
-  diaPagamento: number
-  limite: number
-}
+import { ptBR } from "date-fns/locale"
+import { CalendarIcon, PlusCircle } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface NovaDespesaButtonProps {
-  cartoes: Cartao[]
-  onAdicionarDespesa: (despesa: any) => void
-  centrosCusto: string[]
-  categorias: string[]
+  onAddTransaction: (transaction: {
+    description: string
+    amount: number
+    type: "income" | "expense"
+    category: string
+    date: Date
+  }) => void
 }
 
-export default function NovaDespesaButton({
-  cartoes,
-  onAdicionarDespesa,
-  centrosCusto,
-  categorias,
-}: NovaDespesaButtonProps) {
-  const [modalAberto, setModalAberto] = useState(false)
-  const [calendarOpen, setCalendarOpen] = useState(false)
-  const { toast } = useToast()
+const categories = {
+  income: [
+    { value: "salary", label: "Salário" },
+    { value: "freelance", label: "Freelance" },
+    { value: "investment", label: "Investimentos" },
+    { value: "other", label: "Outros" },
+  ],
+  expense: [
+    { value: "housing", label: "Moradia" },
+    { value: "transport", label: "Transporte" },
+    { value: "food", label: "Alimentação" },
+    { value: "shopping", label: "Compras" },
+    { value: "entertainment", label: "Entretenimento" },
+    { value: "health", label: "Saúde" },
+    { value: "education", label: "Educação" },
+    { value: "travel", label: "Viagem" },
+    { value: "bills", label: "Contas" },
+    { value: "other", label: "Outros" },
+  ],
+}
 
-  const [novaDespesa, setNovaDespesa] = useState({
-    nome: "",
-    valorTotal: 0,
-    centroCusto: "",
-    categoria: "",
-    dataCompra: new Date(),
-    parcelas: 1,
-    cartaoId: "",
-    observacoes: "",
-    essencial: false,
+export default function NovaDespesaButton({ onAddTransaction }: NovaDespesaButtonProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [formData, setFormData] = useState({
+    description: "",
+    amount: "",
+    type: "expense" as "income" | "expense",
+    category: "",
+    date: new Date(),
   })
 
-  const resetFormulario = () => {
-    setNovaDespesa({
-      nome: "",
-      valorTotal: 0,
-      centroCusto: "",
-      categoria: "",
-      dataCompra: new Date(),
-      parcelas: 1,
-      cartaoId: "",
-      observacoes: "",
-      essencial: false,
+  const handleSubmit = () => {
+    if (!formData.description || !formData.amount || !formData.category) return
+
+    onAddTransaction({
+      description: formData.description,
+      amount: Number.parseFloat(formData.amount),
+      type: formData.type,
+      category: formData.category,
+      date: formData.date,
     })
-  }
 
-  const adicionarDespesa = () => {
-    if (!novaDespesa.nome || !novaDespesa.valorTotal || !novaDespesa.cartaoId) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive",
-      })
-      return
-    }
-
-    onAdicionarDespesa(novaDespesa)
-    resetFormulario()
-    setModalAberto(false)
-
-    toast({
-      title: "Sucesso",
-      description: "Despesa adicionada com sucesso!",
+    setFormData({
+      description: "",
+      amount: "",
+      type: "expense",
+      category: "",
+      date: new Date(),
     })
+    setIsOpen(false)
   }
 
   return (
-    <Dialog open={modalAberto} onOpenChange={setModalAberto}>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button
-          className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all bg-blue-600 hover:bg-blue-700"
-          onClick={resetFormulario}
-        >
-          <Plus className="w-6 h-6" />
+        <Button>
+          <PlusCircle className="h-4 w-4 mr-2" />
+          Nova Transação
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nova Despesa</DialogTitle>
+          <DialogTitle>Nova Transação</DialogTitle>
+          <DialogDescription>Adicione uma nova receita ou despesa</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4">
           <div>
-            <Label>Nome da Despesa</Label>
+            <Label htmlFor="description">Descrição</Label>
             <Input
-              value={novaDespesa.nome}
-              onChange={(e) => setNovaDespesa({ ...novaDespesa, nome: e.target.value })}
-              placeholder="Ex: Supermercado"
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Ex: Compra no supermercado"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Valor Total</Label>
-              <Input
-                type="number"
-                value={novaDespesa.valorTotal}
-                onChange={(e) => setNovaDespesa({ ...novaDespesa, valorTotal: Number(e.target.value) })}
-                placeholder="0,00"
-              />
-            </div>
-            <div>
-              <Label>Parcelas</Label>
-              <Input
-                type="number"
-                value={novaDespesa.parcelas}
-                onChange={(e) => setNovaDespesa({ ...novaDespesa, parcelas: Number(e.target.value) })}
-                min="1"
-              />
-            </div>
+          <div>
+            <Label htmlFor="amount">Valor</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.01"
+              value={formData.amount}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              placeholder="0,00"
+            />
           </div>
           <div>
-            <Label>Data da Compra</Label>
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <Label htmlFor="type">Tipo</Label>
+            <Select
+              value={formData.type}
+              onValueChange={(value: "income" | "expense") => setFormData({ ...formData, type: value, category: "" })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="income">Receita</SelectItem>
+                <SelectItem value="expense">Despesa</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="category">Categoria</Label>
+            <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories[formData.type].map((category) => (
+                  <SelectItem key={category.value} value={category.value}>
+                    {category.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Data</Label>
+            <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-start bg-transparent">
+                <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {novaDespesa.dataCompra ? format(novaDespesa.dataCompra, "dd/MM/yyyy") : "Selecione"}
+                  {format(formData.date, "PPP", { locale: ptBR })}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
                 <Calendar
                   mode="single"
-                  selected={novaDespesa.dataCompra}
-                  onSelect={(date) => {
-                    if (date) {
-                      setNovaDespesa({ ...novaDespesa, dataCompra: date })
-                      setCalendarOpen(false)
-                    }
-                  }}
+                  selected={formData.date}
+                  onSelect={(date) => date && setFormData({ ...formData, date })}
                   initialFocus
                 />
               </PopoverContent>
             </Popover>
           </div>
-          <div>
-            <Label>Categoria</Label>
-            <Select
-              value={novaDespesa.categoria}
-              onValueChange={(value) => setNovaDespesa({ ...novaDespesa, categoria: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {categorias.map((categoria) => (
-                  <SelectItem key={categoria} value={categoria}>
-                    {categoria}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Centro de Custo</Label>
-            <Select
-              value={novaDespesa.centroCusto}
-              onValueChange={(value) => setNovaDespesa({ ...novaDespesa, centroCusto: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {centrosCusto.map((centro) => (
-                  <SelectItem key={centro} value={centro}>
-                    {centro}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Cartão</Label>
-            <Select
-              value={novaDespesa.cartaoId}
-              onValueChange={(value) => setNovaDespesa({ ...novaDespesa, cartaoId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {cartoes.map((cartao) => (
-                  <SelectItem key={cartao.id} value={cartao.id}>
-                    {cartao.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Observações</Label>
-            <Textarea
-              value={novaDespesa.observacoes}
-              onChange={(e) => setNovaDespesa({ ...novaDespesa, observacoes: e.target.value })}
-              placeholder="Observações opcionais..."
-            />
-          </div>
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={novaDespesa.essencial || false}
-              onCheckedChange={(checked) => setNovaDespesa({ ...novaDespesa, essencial: checked })}
-            />
-            <Label>Esta é uma despesa essencial?</Label>
-          </div>
-          <div className="flex gap-2 pt-4">
-            <Button onClick={adicionarDespesa} className="flex-1">
-              Adicionar
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                resetFormulario()
-                setModalAberto(false)
-              }}
-              className="flex-1"
-            >
-              Cancelar
-            </Button>
-          </div>
+          <Button onClick={handleSubmit} className="w-full">
+            Adicionar Transação
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

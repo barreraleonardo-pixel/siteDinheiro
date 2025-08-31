@@ -5,14 +5,12 @@ ALTER DATABASE postgres SET "app.jwt_secret" TO 'your-jwt-secret';
 CREATE TABLE IF NOT EXISTS public.transactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-    amount DECIMAL(10,2) NOT NULL,
     description TEXT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    type TEXT CHECK (type IN ('income', 'expense')) NOT NULL,
     category TEXT NOT NULL,
-    date DATE NOT NULL,
-    recurring BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.budgets (
@@ -20,11 +18,10 @@ CREATE TABLE IF NOT EXISTS public.budgets (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     category TEXT NOT NULL,
     limit_amount DECIMAL(10,2) NOT NULL,
-    spent DECIMAL(10,2) DEFAULT 0,
-    period TEXT NOT NULL CHECK (period IN ('monthly', 'weekly')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE(user_id, category, period)
+    month INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, category, month, year)
 );
 
 CREATE TABLE IF NOT EXISTS public.goals (
@@ -33,10 +30,9 @@ CREATE TABLE IF NOT EXISTS public.goals (
     name TEXT NOT NULL,
     target_amount DECIMAL(10,2) NOT NULL,
     current_amount DECIMAL(10,2) DEFAULT 0,
-    target_date DATE NOT NULL,
+    target_date DATE,
     description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Enable Row Level Security

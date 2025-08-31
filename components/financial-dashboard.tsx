@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -17,26 +17,21 @@ import {
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Switch } from "@/components/ui/switch"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase/client"
-import { Plus, TrendingUp, TrendingDown, DollarSign, Target, CalendarIcon, Download, AlertTriangle } from "lucide-react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { CalendarIcon, Plus, TrendingUp, TrendingDown, Target, DollarSign, PieChart, BarChart3 } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 interface Transaction {
   id: string
-  type: "income" | "expense"
-  amount: number
   description: string
+  amount: number
+  type: "income" | "expense"
   category: string
   date: string
-  recurring: boolean
-  user_id?: string
+  user_id: string
 }
 
 interface Budget {
@@ -44,18 +39,29 @@ interface Budget {
   category: string
   limit: number
   spent: number
-  period: "monthly" | "weekly"
-  user_id?: string
+  month: number
+  year: number
+  user_id: string
 }
 
 interface Goal {
   id: string
-  name: string
+  title: string
   target_amount: number
   current_amount: number
   target_date: string
-  description: string
-  user_id?: string
+  user_id: string
+}
+
+interface FinancialData {
+  transactions: Transaction[]
+  budgets: Budget[]
+  goals: Goal[]
+}
+
+interface FinancialDashboardProps {
+  initialData?: FinancialData
+  isDemo?: boolean
 }
 
 const categories = [
@@ -65,311 +71,257 @@ const categories = [
   "Saúde",
   "Educação",
   "Entretenimento",
-  "Compras",
-  "Investimentos",
+  "Roupas",
+  "Utilidades",
+  "Trabalho",
   "Outros",
 ]
 
-export default function FinancialDashboard() {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [budgets, setBudgets] = useState<Budget[]>([])
-  const [goals, setGoals] = useState<Goal[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<"all" | "income" | "expense">("all")
-  const [selectedCategory, setSelectedCategory] = useState<string>("all")
-  const { toast } = useToast()
+export default function FinancialDashboard({ initialData, isDemo = false }: FinancialDashboardProps) {
+  const [data, setData] = useState<FinancialData>(initialData || { transactions: [], budgets: [], goals: [] })
+  const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
   // Estados para formulários
   const [newTransaction, setNewTransaction] = useState({
-    type: "expense" as "income" | "expense",
-    amount: "",
     description: "",
+    amount: "",
+    type: "expense" as "income" | "expense",
     category: "",
     date: new Date(),
-    recurring: false,
   })
 
   const [newBudget, setNewBudget] = useState({
     category: "",
     limit: "",
-    period: "monthly" as "monthly" | "weekly",
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
   })
 
   const [newGoal, setNewGoal] = useState({
-    name: "",
+    title: "",
     target_amount: "",
+    current_amount: "",
     target_date: new Date(),
-    description: "",
   })
 
-  // Dados demo para quando não há Supabase
-  const demoData = {
-    transactions: [
-      {
-        id: "1",
-        type: "income" as const,
-        amount: 5000,
-        description: "Salário",
-        category: "Outros",
-        date: "2024-01-01",
-        recurring: true,
-      },
-      {
-        id: "2",
-        type: "expense" as const,
-        amount: 1200,
-        description: "Aluguel",
-        category: "Moradia",
-        date: "2024-01-01",
-        recurring: true,
-      },
-      {
-        id: "3",
-        type: "expense" as const,
-        amount: 300,
-        description: "Supermercado",
-        category: "Alimentação",
-        date: "2024-01-02",
-        recurring: false,
-      },
-    ],
-    budgets: [
-      {
-        id: "1",
-        category: "Alimentação",
-        limit: 800,
-        spent: 300,
-        period: "monthly" as const,
-      },
-      {
-        id: "2",
-        category: "Transporte",
-        limit: 400,
-        spent: 150,
-        period: "monthly" as const,
-      },
-    ],
-    goals: [
-      {
-        id: "1",
-        name: "Reserva de Emergência",
-        target_amount: 10000,
-        current_amount: 3500,
-        target_date: "2024-12-31",
-        description: "Reserva para emergências",
-      },
-      {
-        id: "2",
-        name: "Viagem",
-        target_amount: 5000,
-        current_amount: 1200,
-        target_date: "2024-07-01",
-        description: "Viagem de férias",
-      },
-    ],
-  }
-
+  // Carregar dados do Supabase (se não estiver em modo demo)
   useEffect(() => {
-    loadData()
-  }, [])
+    if (!isDemo && supabase) {
+      loadData()
+    }
+  }, [isDemo, supabase])
 
   const loadData = async () => {
+    if (!supabase) return
+
     setLoading(true)
+    try {
+      const [transactionsRes, budgetsRes, goalsRes] = await Promise.all([
+        supabase.from("transactions").select("*").order("date", { ascending: false }),
+        supabase.from("budgets").select("*"),
+        supabase.from("goals").select("*"),
+      ])
 
-    if (supabase) {
-      try {
-        // Carregar dados do Supabase
-        const [transactionsRes, budgetsRes, goalsRes] = await Promise.all([
-          supabase.from("transactions").select("*").order("date", { ascending: false }),
-          supabase.from("budgets").select("*"),
-          supabase.from("goals").select("*"),
-        ])
-
-        if (transactionsRes.data) setTransactions(transactionsRes.data)
-        if (budgetsRes.data) setBudgets(budgetsRes.data)
-        if (goalsRes.data) setGoals(goalsRes.data)
-      } catch (error) {
-        console.error("Erro ao carregar dados:", error)
-        // Usar dados demo em caso de erro
-        setTransactions(demoData.transactions)
-        setBudgets(demoData.budgets)
-        setGoals(demoData.goals)
-      }
-    } else {
-      // Usar dados demo quando não há Supabase
-      setTransactions(demoData.transactions)
-      setBudgets(demoData.budgets)
-      setGoals(demoData.goals)
+      setData({
+        transactions: transactionsRes.data || [],
+        budgets: budgetsRes.data || [],
+        goals: goalsRes.data || [],
+      })
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error)
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
+  // Adicionar transação
   const addTransaction = async () => {
-    if (!newTransaction.amount || !newTransaction.description || !newTransaction.category) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive",
-      })
-      return
-    }
+    if (!newTransaction.description || !newTransaction.amount || !newTransaction.category) return
 
-    const transaction: Transaction = {
-      id: Date.now().toString(),
-      type: newTransaction.type,
-      amount: Number.parseFloat(newTransaction.amount),
+    const transaction: Omit<Transaction, "id" | "user_id"> = {
       description: newTransaction.description,
+      amount:
+        newTransaction.type === "expense"
+          ? -Math.abs(Number(newTransaction.amount))
+          : Math.abs(Number(newTransaction.amount)),
+      type: newTransaction.type,
       category: newTransaction.category,
       date: format(newTransaction.date, "yyyy-MM-dd"),
-      recurring: newTransaction.recurring,
     }
 
-    if (supabase) {
+    if (isDemo || !supabase) {
+      // Modo demo - adicionar localmente
+      const newTx: Transaction = {
+        ...transaction,
+        id: Date.now().toString(),
+        user_id: "demo",
+      }
+      setData((prev) => ({
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+      }))
+    } else {
+      // Modo Supabase
       try {
-        const { error } = await supabase.from("transactions").insert([transaction])
+        const { data: insertedData, error } = await supabase.from("transactions").insert([transaction]).select()
+
         if (error) throw error
+
+        if (insertedData) {
+          setData((prev) => ({
+            ...prev,
+            transactions: [...insertedData, ...prev.transactions],
+          }))
+        }
       } catch (error) {
-        console.error("Erro ao salvar transação:", error)
+        console.error("Erro ao adicionar transação:", error)
       }
     }
 
-    setTransactions((prev) => [transaction, ...prev])
+    // Resetar formulário
     setNewTransaction({
-      type: "expense",
-      amount: "",
       description: "",
+      amount: "",
+      type: "expense",
       category: "",
       date: new Date(),
-      recurring: false,
-    })
-
-    toast({
-      title: "Sucesso",
-      description: "Transação adicionada com sucesso!",
     })
   }
 
+  // Adicionar orçamento
   const addBudget = async () => {
-    if (!newBudget.category || !newBudget.limit) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive",
-      })
-      return
-    }
+    if (!newBudget.category || !newBudget.limit) return
 
-    const budget: Budget = {
-      id: Date.now().toString(),
+    const budget: Omit<Budget, "id" | "user_id" | "spent"> = {
       category: newBudget.category,
-      limit: Number.parseFloat(newBudget.limit),
-      spent: 0,
-      period: newBudget.period,
+      limit: Number(newBudget.limit),
+      month: newBudget.month,
+      year: newBudget.year,
     }
 
-    if (supabase) {
+    if (isDemo || !supabase) {
+      // Modo demo
+      const spent = data.transactions
+        .filter((t) => t.type === "expense" && t.category === budget.category)
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0)
+
+      const newBudgetItem: Budget = {
+        ...budget,
+        id: Date.now().toString(),
+        user_id: "demo",
+        spent,
+      }
+      setData((prev) => ({
+        ...prev,
+        budgets: [
+          ...prev.budgets.filter(
+            (b) => !(b.category === budget.category && b.month === budget.month && b.year === budget.year),
+          ),
+          newBudgetItem,
+        ],
+      }))
+    } else {
+      // Modo Supabase
       try {
-        const { error } = await supabase.from("budgets").insert([budget])
+        const { data: insertedData, error } = await supabase.from("budgets").upsert([budget]).select()
+
         if (error) throw error
+
+        if (insertedData) {
+          loadData() // Recarregar para calcular gastos
+        }
       } catch (error) {
-        console.error("Erro ao salvar orçamento:", error)
+        console.error("Erro ao adicionar orçamento:", error)
       }
     }
 
-    setBudgets((prev) => [...prev, budget])
+    // Resetar formulário
     setNewBudget({
       category: "",
       limit: "",
-      period: "monthly",
-    })
-
-    toast({
-      title: "Sucesso",
-      description: "Orçamento criado com sucesso!",
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
     })
   }
 
+  // Adicionar meta
   const addGoal = async () => {
-    if (!newGoal.name || !newGoal.target_amount) {
-      toast({
-        title: "Erro",
-        description: "Preencha todos os campos obrigatórios",
-        variant: "destructive",
-      })
-      return
-    }
+    if (!newGoal.title || !newGoal.target_amount) return
 
-    const goal: Goal = {
-      id: Date.now().toString(),
-      name: newGoal.name,
-      target_amount: Number.parseFloat(newGoal.target_amount),
-      current_amount: 0,
+    const goal: Omit<Goal, "id" | "user_id"> = {
+      title: newGoal.title,
+      target_amount: Number(newGoal.target_amount),
+      current_amount: Number(newGoal.current_amount) || 0,
       target_date: format(newGoal.target_date, "yyyy-MM-dd"),
-      description: newGoal.description,
     }
 
-    if (supabase) {
+    if (isDemo || !supabase) {
+      // Modo demo
+      const newGoalItem: Goal = {
+        ...goal,
+        id: Date.now().toString(),
+        user_id: "demo",
+      }
+      setData((prev) => ({
+        ...prev,
+        goals: [...prev.goals, newGoalItem],
+      }))
+    } else {
+      // Modo Supabase
       try {
-        const { error } = await supabase.from("goals").insert([goal])
+        const { data: insertedData, error } = await supabase.from("goals").insert([goal]).select()
+
         if (error) throw error
+
+        if (insertedData) {
+          setData((prev) => ({
+            ...prev,
+            goals: [...prev.goals, ...insertedData],
+          }))
+        }
       } catch (error) {
-        console.error("Erro ao salvar meta:", error)
+        console.error("Erro ao adicionar meta:", error)
       }
     }
 
-    setGoals((prev) => [...prev, goal])
+    // Resetar formulário
     setNewGoal({
-      name: "",
+      title: "",
       target_amount: "",
+      current_amount: "",
       target_date: new Date(),
-      description: "",
-    })
-
-    toast({
-      title: "Sucesso",
-      description: "Meta criada com sucesso!",
     })
   }
 
-  // Cálculos
-  const totalIncome = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
-
-  const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0)
-
+  // Calcular estatísticas
+  const totalIncome = data.transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0)
+  const totalExpenses = Math.abs(
+    data.transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0),
+  )
   const balance = totalIncome - totalExpenses
 
-  const filteredTransactions = transactions.filter((t) => {
-    if (filter !== "all" && t.type !== filter) return false
-    if (selectedCategory !== "all" && t.category !== selectedCategory) return false
-    return true
-  })
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
+  // Calcular gastos por categoria para orçamentos
+  const expensesByCategory = data.transactions
+    .filter((t) => t.type === "expense")
+    .reduce(
+      (acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount)
+        return acc
+      },
+      {} as Record<string, number>,
     )
-  }
+
+  // Atualizar orçamentos com gastos calculados
+  const budgetsWithSpent = data.budgets.map((budget) => ({
+    ...budget,
+    spent: expensesByCategory[budget.category] || 0,
+  }))
 
   return (
     <div className="space-y-6">
-      {!supabase && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Sistema em modo demo. Configure o Supabase para persistir dados.{" "}
-            <a href="/setup" className="underline">
-              Ver instruções
-            </a>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Receitas</CardTitle>
@@ -409,7 +361,7 @@ export default function FinancialDashboard() {
 
       {/* Tabs principais */}
       <Tabs defaultValue="transactions" className="space-y-4">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="transactions">Transações</TabsTrigger>
           <TabsTrigger value="budgets">Orçamentos</TabsTrigger>
           <TabsTrigger value="goals">Metas</TabsTrigger>
@@ -418,177 +370,136 @@ export default function FinancialDashboard() {
 
         {/* Aba Transações */}
         <TabsContent value="transactions" className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-            <div className="flex gap-2">
-              <Select value={filter} onValueChange={(value: any) => setFilter(value)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="income">Receitas</SelectItem>
-                  <SelectItem value="expense">Despesas</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas Categorias</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova Transação
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Nova Transação</DialogTitle>
-                  <DialogDescription>Adicione uma nova receita ou despesa</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={newTransaction.type === "income"}
-                        onCheckedChange={(checked) =>
-                          setNewTransaction((prev) => ({
-                            ...prev,
-                            type: checked ? "income" : "expense",
-                          }))
-                        }
-                      />
-                      <Label>{newTransaction.type === "income" ? "Receita" : "Despesa"}</Label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="amount">Valor</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={newTransaction.amount}
-                      onChange={(e) => setNewTransaction((prev) => ({ ...prev, amount: e.target.value }))}
-                      placeholder="0,00"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="description">Descrição</Label>
-                    <Input
-                      id="description"
-                      value={newTransaction.description}
-                      onChange={(e) => setNewTransaction((prev) => ({ ...prev, description: e.target.value }))}
-                      placeholder="Descrição da transação"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="category">Categoria</Label>
-                    <Select
-                      value={newTransaction.category}
-                      onValueChange={(value) => setNewTransaction((prev) => ({ ...prev, category: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label>Data</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(newTransaction.date, "PPP", { locale: ptBR })}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={newTransaction.date}
-                          onSelect={(date) => date && setNewTransaction((prev) => ({ ...prev, date }))}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={newTransaction.recurring}
-                      onCheckedChange={(checked) => setNewTransaction((prev) => ({ ...prev, recurring: checked }))}
-                    />
-                    <Label>Transação recorrente</Label>
-                  </div>
-
-                  <Button onClick={addTransaction} className="w-full">
-                    Adicionar Transação
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
           <Card>
             <CardHeader>
-              <CardTitle>Transações Recentes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {filteredTransactions.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">Nenhuma transação encontrada</p>
-                ) : (
-                  filteredTransactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={`p-2 rounded-full ${
-                            transaction.type === "income" ? "bg-green-100" : "bg-red-100"
-                          }`}
-                        >
-                          {transaction.type === "income" ? (
-                            <TrendingUp className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4 text-red-600" />
-                          )}
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Transações</CardTitle>
+                  <CardDescription>Gerencie suas receitas e despesas</CardDescription>
+                </div>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Nova Transação
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Adicionar Transação</DialogTitle>
+                      <DialogDescription>Registre uma nova receita ou despesa</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="description">Descrição</Label>
+                        <Input
+                          id="description"
+                          value={newTransaction.description}
+                          onChange={(e) => setNewTransaction((prev) => ({ ...prev, description: e.target.value }))}
+                          placeholder="Ex: Salário, Supermercado..."
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="amount">Valor</Label>
+                          <Input
+                            id="amount"
+                            type="number"
+                            step="0.01"
+                            value={newTransaction.amount}
+                            onChange={(e) => setNewTransaction((prev) => ({ ...prev, amount: e.target.value }))}
+                            placeholder="0,00"
+                          />
                         </div>
-                        <div>
-                          <p className="font-medium">{transaction.description}</p>
-                          <p className="text-sm text-gray-500">
-                            {transaction.category} • {format(new Date(transaction.date), "dd/MM/yyyy")}
-                          </p>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="type">Tipo</Label>
+                          <Select
+                            value={newTransaction.type}
+                            onValueChange={(value: "income" | "expense") =>
+                              setNewTransaction((prev) => ({ ...prev, type: value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="income">Receita</SelectItem>
+                              <SelectItem value="expense">Despesa</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`font-bold ${transaction.type === "income" ? "text-green-600" : "text-red-600"}`}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="category">Categoria</Label>
+                        <Select
+                          value={newTransaction.category}
+                          onValueChange={(value) => setNewTransaction((prev) => ({ ...prev, category: value }))}
                         >
-                          {transaction.type === "income" ? "+" : "-"}R${" "}
-                          {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </span>
-                        {transaction.recurring && <Badge variant="secondary">Recorrente</Badge>}
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma categoria" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Data</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal bg-transparent"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {format(newTransaction.date, "PPP", { locale: ptBR })}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={newTransaction.date}
+                              onSelect={(date) => date && setNewTransaction((prev) => ({ ...prev, date }))}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <Button onClick={addTransaction} className="w-full">
+                        Adicionar Transação
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {data.transactions.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    Nenhuma transação encontrada. Adicione sua primeira transação!
+                  </p>
+                ) : (
+                  data.transactions.slice(0, 10).map((transaction) => (
+                    <div key={transaction.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">{transaction.description}</div>
+                        <div className="text-sm text-gray-500">
+                          {transaction.category} • {format(new Date(transaction.date), "dd/MM/yyyy")}
+                        </div>
+                      </div>
+                      <div className={`font-bold ${transaction.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                        {transaction.type === "income" ? "+" : ""}R${" "}
+                        {Math.abs(transaction.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                   ))
@@ -600,321 +511,385 @@ export default function FinancialDashboard() {
 
         {/* Aba Orçamentos */}
         <TabsContent value="budgets" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Orçamentos</h2>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Novo Orçamento
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Novo Orçamento</DialogTitle>
-                  <DialogDescription>Defina um limite de gastos para uma categoria</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="budget-category">Categoria</Label>
-                    <Select
-                      value={newBudget.category}
-                      onValueChange={(value) => setNewBudget((prev) => ({ ...prev, category: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((cat) => (
-                          <SelectItem key={cat} value={cat}>
-                            {cat}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="budget-limit">Limite</Label>
-                    <Input
-                      id="budget-limit"
-                      type="number"
-                      step="0.01"
-                      value={newBudget.limit}
-                      onChange={(e) => setNewBudget((prev) => ({ ...prev, limit: e.target.value }))}
-                      placeholder="0,00"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="budget-period">Período</Label>
-                    <Select
-                      value={newBudget.period}
-                      onValueChange={(value: any) => setNewBudget((prev) => ({ ...prev, period: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monthly">Mensal</SelectItem>
-                        <SelectItem value="weekly">Semanal</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Button onClick={addBudget} className="w-full">
-                    Criar Orçamento
-                  </Button>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Orçamentos</CardTitle>
+                  <CardDescription>Controle seus gastos por categoria</CardDescription>
                 </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {budgets.map((budget) => {
-              const percentage = (budget.spent / budget.limit) * 100
-              const isOverBudget = percentage > 100
-
-              return (
-                <Card key={budget.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-center">
-                      <CardTitle className="text-lg">{budget.category}</CardTitle>
-                      <Badge variant={isOverBudget ? "destructive" : "secondary"}>
-                        {budget.period === "monthly" ? "Mensal" : "Semanal"}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Gasto</span>
-                        <span>R$ {budget.spent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Novo Orçamento
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Criar Orçamento</DialogTitle>
+                      <DialogDescription>Defina um limite de gastos para uma categoria</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="budget-category">Categoria</Label>
+                        <Select
+                          value={newBudget.category}
+                          onValueChange={(value) => setNewBudget((prev) => ({ ...prev, category: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma categoria" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span>Limite</span>
-                        <span>R$ {budget.limit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="budget-limit">Limite (R$)</Label>
+                        <Input
+                          id="budget-limit"
+                          type="number"
+                          step="0.01"
+                          value={newBudget.limit}
+                          onChange={(e) => setNewBudget((prev) => ({ ...prev, limit: e.target.value }))}
+                          placeholder="0,00"
+                        />
                       </div>
-                      <Progress value={Math.min(percentage, 100)} className={isOverBudget ? "bg-red-100" : ""} />
-                      <div className="text-center text-sm text-gray-500">{percentage.toFixed(1)}% utilizado</div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="budget-month">Mês</Label>
+                          <Select
+                            value={newBudget.month.toString()}
+                            onValueChange={(value) =>
+                              setNewBudget((prev) => ({ ...prev, month: Number.parseInt(value) }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 12 }, (_, i) => (
+                                <SelectItem key={i + 1} value={(i + 1).toString()}>
+                                  {format(new Date(2024, i), "MMMM", { locale: ptBR })}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="budget-year">Ano</Label>
+                          <Select
+                            value={newBudget.year.toString()}
+                            onValueChange={(value) =>
+                              setNewBudget((prev) => ({ ...prev, year: Number.parseInt(value) }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="2024">2024</SelectItem>
+                              <SelectItem value="2025">2025</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <Button onClick={addBudget} className="w-full">
+                        Criar Orçamento
+                      </Button>
                     </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {budgetsWithSpent.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">
+                    Nenhum orçamento criado. Crie seu primeiro orçamento!
+                  </p>
+                ) : (
+                  budgetsWithSpent.map((budget) => {
+                    const percentage = (budget.spent / budget.limit) * 100
+                    const isOverBudget = percentage > 100
 
-                    {isOverBudget && (
-                      <Alert>
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertDescription>
-                          Orçamento excedido em R${" "}
-                          {(budget.spent - budget.limit).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-
-          {budgets.length === 0 && (
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-gray-500">Nenhum orçamento criado ainda</p>
-              </CardContent>
-            </Card>
-          )}
+                    return (
+                      <div key={budget.id} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{budget.category}</div>
+                            <div className="text-sm text-gray-500">
+                              {format(new Date(budget.year, budget.month - 1), "MMMM yyyy", { locale: ptBR })}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-bold ${isOverBudget ? "text-red-600" : "text-gray-900"}`}>
+                              R$ {budget.spent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} / R${" "}
+                              {budget.limit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            </div>
+                            <Badge variant={isOverBudget ? "destructive" : percentage > 80 ? "secondary" : "default"}>
+                              {percentage.toFixed(1)}%
+                            </Badge>
+                          </div>
+                        </div>
+                        <Progress
+                          value={Math.min(percentage, 100)}
+                          className={`h-2 ${isOverBudget ? "bg-red-100" : ""}`}
+                        />
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Aba Metas */}
         <TabsContent value="goals" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Metas Financeiras</h2>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>
-                  <Target className="h-4 w-4 mr-2" />
-                  Nova Meta
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Nova Meta</DialogTitle>
-                  <DialogDescription>Defina um objetivo financeiro</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="goal-name">Nome da Meta</Label>
-                    <Input
-                      id="goal-name"
-                      value={newGoal.name}
-                      onChange={(e) => setNewGoal((prev) => ({ ...prev, name: e.target.value }))}
-                      placeholder="Ex: Reserva de emergência"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="goal-amount">Valor Alvo</Label>
-                    <Input
-                      id="goal-amount"
-                      type="number"
-                      step="0.01"
-                      value={newGoal.target_amount}
-                      onChange={(e) => setNewGoal((prev) => ({ ...prev, target_amount: e.target.value }))}
-                      placeholder="0,00"
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Data Alvo</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {format(newGoal.target_date, "PPP", { locale: ptBR })}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={newGoal.target_date}
-                          onSelect={(date) => date && setNewGoal((prev) => ({ ...prev, target_date: date }))}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="goal-description">Descrição</Label>
-                    <Textarea
-                      id="goal-description"
-                      value={newGoal.description}
-                      onChange={(e) => setNewGoal((prev) => ({ ...prev, description: e.target.value }))}
-                      placeholder="Descreva sua meta..."
-                    />
-                  </div>
-
-                  <Button onClick={addGoal} className="w-full">
-                    Criar Meta
-                  </Button>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Metas Financeiras</CardTitle>
+                  <CardDescription>Acompanhe seus objetivos financeiros</CardDescription>
                 </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {goals.map((goal) => {
-              const percentage = (goal.current_amount / goal.target_amount) * 100
-              const daysLeft = Math.ceil(
-                (new Date(goal.target_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
-              )
-
-              return (
-                <Card key={goal.id}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{goal.name}</CardTitle>
-                    <CardDescription>{goal.description}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Progresso</span>
-                        <span>R$ {goal.current_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Nova Meta
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Criar Meta</DialogTitle>
+                      <DialogDescription>Defina um objetivo financeiro para alcançar</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="goal-title">Título da Meta</Label>
+                        <Input
+                          id="goal-title"
+                          value={newGoal.title}
+                          onChange={(e) => setNewGoal((prev) => ({ ...prev, title: e.target.value }))}
+                          placeholder="Ex: Reserva de emergência, Viagem..."
+                        />
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span>Meta</span>
-                        <span>R$ {goal.target_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="goal-target">Valor Alvo (R$)</Label>
+                          <Input
+                            id="goal-target"
+                            type="number"
+                            step="0.01"
+                            value={newGoal.target_amount}
+                            onChange={(e) => setNewGoal((prev) => ({ ...prev, target_amount: e.target.value }))}
+                            placeholder="0,00"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="goal-current">Valor Atual (R$)</Label>
+                          <Input
+                            id="goal-current"
+                            type="number"
+                            step="0.01"
+                            value={newGoal.current_amount}
+                            onChange={(e) => setNewGoal((prev) => ({ ...prev, current_amount: e.target.value }))}
+                            placeholder="0,00"
+                          />
+                        </div>
                       </div>
-                      <Progress value={Math.min(percentage, 100)} />
-                      <div className="text-center text-sm text-gray-500">{percentage.toFixed(1)}% concluído</div>
-                    </div>
 
-                    <div className="text-sm text-gray-500 text-center">
-                      {daysLeft > 0 ? `${daysLeft} dias restantes` : "Meta vencida"}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+                      <div className="space-y-2">
+                        <Label>Data Alvo</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal bg-transparent"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {format(newGoal.target_date, "PPP", { locale: ptBR })}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={newGoal.target_date}
+                              onSelect={(date) => date && setNewGoal((prev) => ({ ...prev, target_date: date }))}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
 
-          {goals.length === 0 && (
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-gray-500">Nenhuma meta criada ainda</p>
-              </CardContent>
-            </Card>
-          )}
+                      <Button onClick={addGoal} className="w-full">
+                        Criar Meta
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                {data.goals.length === 0 ? (
+                  <div className="col-span-2">
+                    <p className="text-center text-gray-500 py-8">
+                      Nenhuma meta criada. Defina seus objetivos financeiros!
+                    </p>
+                  </div>
+                ) : (
+                  data.goals.map((goal) => {
+                    const percentage = (goal.current_amount / goal.target_amount) * 100
+                    const isCompleted = percentage >= 100
+
+                    return (
+                      <Card key={goal.id}>
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">{goal.title}</CardTitle>
+                            <Target className={`h-5 w-5 ${isCompleted ? "text-green-600" : "text-blue-600"}`} />
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span>Progresso</span>
+                              <span className="font-medium">{percentage.toFixed(1)}%</span>
+                            </div>
+                            <Progress value={Math.min(percentage, 100)} className="h-2" />
+                          </div>
+
+                          <div className="space-y-1 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Atual:</span>
+                              <span className="font-medium">
+                                R$ {goal.current_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Meta:</span>
+                              <span className="font-medium">
+                                R$ {goal.target_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Data alvo:</span>
+                              <span className="font-medium">{format(new Date(goal.target_date), "dd/MM/yyyy")}</span>
+                            </div>
+                          </div>
+
+                          {isCompleted && (
+                            <Badge className="w-full justify-center bg-green-100 text-green-800">
+                              Meta Alcançada! 🎉
+                            </Badge>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Aba Relatórios */}
         <TabsContent value="reports" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Relatórios</h2>
-            <Button variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Exportar
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Gastos por Categoria</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <PieChart className="h-5 w-5" />
+                  Gastos por Categoria
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {categories.map((category) => {
-                    const categoryExpenses = transactions
-                      .filter((t) => t.type === "expense" && t.category === category)
-                      .reduce((sum, t) => sum + t.amount, 0)
-
-                    const percentage = totalExpenses > 0 ? (categoryExpenses / totalExpenses) * 100 : 0
-
-                    if (categoryExpenses === 0) return null
-
-                    return (
-                      <div key={category} className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>{category}</span>
-                          <span>R$ {categoryExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                <div className="space-y-3">
+                  {Object.entries(expensesByCategory)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 5)
+                    .map(([category, amount]) => {
+                      const percentage = (amount / totalExpenses) * 100
+                      return (
+                        <div key={category} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span>{category}</span>
+                            <span className="font-medium">
+                              R$ {amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ({percentage.toFixed(1)}
+                              %)
+                            </span>
+                          </div>
+                          <Progress value={percentage} className="h-2" />
                         </div>
-                        <Progress value={percentage} />
-                        <div className="text-xs text-gray-500 text-right">{percentage.toFixed(1)}%</div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  {Object.keys(expensesByCategory).length === 0 && (
+                    <p className="text-center text-gray-500 py-4">Nenhuma despesa registrada ainda.</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Resumo Mensal</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Resumo Mensal
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex justify-between">
-                    <span>Total de Receitas:</span>
-                    <span className="font-bold text-green-600">
-                      R$ {totalIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div className="space-y-1">
+                      <div className="text-2xl font-bold text-green-600">
+                        {data.transactions.filter((t) => t.type === "income").length}
+                      </div>
+                      <div className="text-sm text-gray-600">Receitas</div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-2xl font-bold text-red-600">
+                        {data.transactions.filter((t) => t.type === "expense").length}
+                      </div>
+                      <div className="text-sm text-gray-600">Despesas</div>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Total de Despesas:</span>
-                    <span className="font-bold text-red-600">
-                      R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Taxa de Poupança</span>
+                      <span className="font-medium">
+                        {totalIncome > 0 ? ((balance / totalIncome) * 100).toFixed(1) : 0}%
+                      </span>
+                    </div>
+                    <Progress
+                      value={totalIncome > 0 ? Math.max(0, (balance / totalIncome) * 100) : 0}
+                      className="h-2"
+                    />
                   </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span>Saldo Final:</span>
-                    <span className={`font-bold ${balance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      R$ {balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Taxa de Poupança:</span>
-                    <span className="font-bold">
-                      {totalIncome > 0 ? ((balance / totalIncome) * 100).toFixed(1) : 0}%
-                    </span>
+
+                  <div className="pt-2 border-t">
+                    <div className="text-sm text-gray-600 mb-2">Categoria com maior gasto:</div>
+                    {Object.keys(expensesByCategory).length > 0 ? (
+                      <div className="font-medium">
+                        {Object.entries(expensesByCategory).sort(([, a], [, b]) => b - a)[0]?.[0] || "N/A"}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500">Nenhuma despesa registrada</div>
+                    )}
                   </div>
                 </div>
               </CardContent>

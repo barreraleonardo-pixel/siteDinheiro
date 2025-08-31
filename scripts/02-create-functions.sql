@@ -1,93 +1,65 @@
--- Function to update budget spent amount
-CREATE OR REPLACE FUNCTION update_budget_spent()
-RETURNS TRIGGER AS $$
+-- Habilitar RLS (Row Level Security)
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
+
+-- Políticas de segurança para transactions
+CREATE POLICY "Users can view own transactions" ON transactions
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own transactions" ON transactions
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own transactions" ON transactions
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own transactions" ON transactions
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Políticas de segurança para budgets
+CREATE POLICY "Users can view own budgets" ON budgets
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own budgets" ON budgets
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own budgets" ON budgets
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own budgets" ON budgets
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Políticas de segurança para goals
+CREATE POLICY "Users can view own goals" ON goals
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own goals" ON goals
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own goals" ON goals
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own goals" ON goals
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Função para calcular gastos por categoria
+CREATE OR REPLACE FUNCTION get_category_spending(
+  p_user_id UUID,
+  p_category TEXT,
+  p_month INTEGER,
+  p_year INTEGER
+)
+RETURNS DECIMAL AS $$
 BEGIN
-    -- Update budget spent amount when transaction is inserted/updated/deleted
-    IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-        UPDATE public.budgets 
-        SET spent = (
-            SELECT COALESCE(SUM(amount), 0)
-            FROM public.transactions 
-            WHERE user_id = NEW.user_id 
-            AND category = NEW.category 
-            AND type = 'expense'
-            AND date >= CASE 
-                WHEN budgets.period = 'monthly' THEN date_trunc('month', CURRENT_DATE)
-                WHEN budgets.period = 'weekly' THEN date_trunc('week', CURRENT_DATE)
-            END
-        ),
-        updated_at = NOW()
-        WHERE user_id = NEW.user_id AND category = NEW.category;
-        
-        RETURN NEW;
-    END IF;
-    
-    IF TG_OP = 'DELETE' THEN
-        UPDATE public.budgets 
-        SET spent = (
-            SELECT COALESCE(SUM(amount), 0)
-            FROM public.transactions 
-            WHERE user_id = OLD.user_id 
-            AND category = OLD.category 
-            AND type = 'expense'
-            AND date >= CASE 
-                WHEN budgets.period = 'monthly' THEN date_trunc('month', CURRENT_DATE)
-                WHEN budgets.period = 'weekly' THEN date_trunc('week', CURRENT_DATE)
-            END
-        ),
-        updated_at = NOW()
-        WHERE user_id = OLD.user_id AND category = OLD.category;
-        
-        RETURN OLD;
-    END IF;
-    
-    RETURN NULL;
+  RETURN COALESCE(
+    (SELECT SUM(ABS(amount))
+     FROM transactions
+     WHERE user_id = p_user_id
+       AND category = p_category
+       AND type = 'expense'
+       AND EXTRACT(MONTH FROM date) = p_month
+       AND EXTRACT(YEAR FROM date) = p_year),
+    0
+  );
 END;
-$$ LANGUAGE plpgsql;
-
--- Create trigger for budget updates
-DROP TRIGGER IF EXISTS trigger_update_budget_spent ON public.transactions;
-CREATE TRIGGER trigger_update_budget_spent
-    AFTER INSERT OR UPDATE OR DELETE ON public.transactions
-    FOR EACH ROW EXECUTE FUNCTION update_budget_spent();
-
--- Function to update goal progress
-CREATE OR REPLACE FUNCTION update_goal_progress()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Update goal current_amount when transaction is inserted/updated/deleted
-    IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-        -- This is a simplified version - in practice you might want more complex logic
-        -- to determine which transactions contribute to which goals
-        RETURN NEW;
-    END IF;
-    
-    IF TG_OP = 'DELETE' THEN
-        RETURN OLD;
-    END IF;
-    
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to handle updated_at timestamp
-CREATE OR REPLACE FUNCTION handle_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = timezone('utc'::text, now());
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create triggers for updated_at
-CREATE TRIGGER set_timestamp_transactions
-    BEFORE UPDATE ON public.transactions
-    FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-CREATE TRIGGER set_timestamp_budgets
-    BEFORE UPDATE ON public.budgets
-    FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
-
-CREATE TRIGGER set_timestamp_goals
-    BEFORE UPDATE ON public.goals
-    FOR EACH ROW EXECUTE FUNCTION handle_updated_at();
+$$ LANGUAGE plpgsql SECURITY DEFINER;
